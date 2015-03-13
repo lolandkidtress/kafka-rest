@@ -1,0 +1,5 @@
+kafka-rest (0) unstable; urgency=low
+
+  * fork kafka-rest
+
+ -- Norbert Hu <norbert@uber.com>  Fri, 13 Mar 2015 00:00:00 +0000
