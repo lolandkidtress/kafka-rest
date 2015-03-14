@@ -3,5 +3,36 @@
 %:
 	dh $@
 
+SLF4J_VERSION = 1.7.7
+SLF4J = slf4j-$(SLF4J_VERSION)
+
 override_dh_auto_build:
 	mvn package
+
+# Do not install init script automatically
+override_dh_installinit:
+
+DESTDIR = debian/kafka-rest
+override_dh_auto_install:
+	install -m 755 -d $(DESTDIR)/etc/kafka-rest
+	install -m 644 config/*.properties $(DESTDIR)/etc/kafka-rest
+	install -m 755 -d $(DESTDIR)/usr/lib/kafka-rest
+	for i in `ls | grep -vE config\|debian`; do \
+	    cp -r $$i $(DESTDIR)/usr/lib/kafka-rest || exit $$?; \
+	    done
+	find $(DESTDIR)/usr/lib/kafka-rest -type f -a \
+	    \( -name \*.java -o -name \*.class -o \
+	    -name \*.MF -o -name \*.html \) \
+	    -print -delete
+	for i in `seq 10`; do \
+	    find $(DESTDIR) -type d -empty -print -exec rmdir '{}' ';' || :; \
+	    done
+	find $(DESTDIR)/usr/lib/kafka-rest -type f -a \
+	    \( -name README\* -o -name LICENSE -o -name NOTICE -o -name HEADER \) \
+	    -print -delete || :
+	find $(DESTDIR)/usr/lib/kafka-rest -type d -a \
+	    \( -name test -o -name src -o -name tmp \) \
+	    -print -exec rm -rf '{}' ';' || :
+	ln -s /etc/kafka-rest $(DESTDIR)/usr/lib/kafka-rest/config
+	ln -s /var/log/kafka-rest $(DESTDIR)/usr/lib/kafka-rest/logs
+	install -m 755 -d $(DESTDIR)/var/log/kafka-rest
