@@ -52,6 +52,11 @@
             <name>Confluent</name>
             <url>http://packages.confluent.io/maven/</url>
         </repository>
+        <repository>
+            <id>snapshot</id>
+            <name>snapshot</name>
+            <url>http://artifactory.uber.internal:4587/artifactory/ext-snapshot-local/</url>
+        </repository>
     </repositories>
 
     <dependencies>

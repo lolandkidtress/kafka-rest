@@ -2,7 +2,7 @@ Source: kafka-rest
 Section: database
 Priority: extra
 Maintainer: Norbert Hu <norbert@uber.com>
-Build-Depends: debhelper (>= 8.0.0), openjdk-7-jdk, curl
+Build-Depends: debhelper (>= 8.0.0), openjdk-7-jdk, maven
 Standards-Version: 3.9.3
 Homepage: http://confluent.io/docs/current/index.html
 
