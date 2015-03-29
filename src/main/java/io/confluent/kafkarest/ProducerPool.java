@@ -78,7 +78,7 @@ public class ProducerPool {
     ByteArraySerializer keySerializer = new ByteArraySerializer();
     keySerializer.configure(binaryProps, true);
     ByteArraySerializer valueSerializer = new ByteArraySerializer();
-    keySerializer.configure(binaryProps, false);
+    valueSerializer.configure(binaryProps, false);
     KafkaProducer<byte[], byte[]> byteArrayProducer
         = new KafkaProducer<byte[], byte[]>(binaryProps, keySerializer, valueSerializer);
     producers.put(
