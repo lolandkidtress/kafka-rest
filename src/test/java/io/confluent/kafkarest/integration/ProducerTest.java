@@ -41,6 +41,7 @@ import io.confluent.kafkarest.entities.PartitionProduceRequest;
 import io.confluent.kafkarest.entities.PartitionReplica;
 import io.confluent.kafkarest.entities.ProduceRecord;
 import io.confluent.kafkarest.entities.ProduceResponse;
+import io.confluent.kafkarest.entities.SpoolMode;
 import kafka.serializer.Decoder;
 import kafka.serializer.DefaultDecoder;
 import kafka.utils.ZKStringSerializer$;
@@ -165,7 +166,7 @@ public class ProducerTest extends AbstractProducerTest {
     ProducerPool pool = new ProducerPool(this.restConfig, this.bootstrapServers, overrides);
 
     sawCallback = false;
-    pool.produce(topicName, 0, EmbeddedFormat.BINARY, null,
+    pool.produce(topicName, 0, EmbeddedFormat.BINARY, null, SpoolMode.DISABLED,
                  Arrays.asList(new BinaryProduceRecord("data".getBytes())),
                  new ProducerPool.ProduceRequestCallback() {
                    @Override

@@ -16,7 +16,6 @@
 package io.confluent.kafkarest;
 
 import org.I0Itec.zkclient.ZkClient;
-import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.slf4j.Logger;
@@ -32,6 +31,7 @@ import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import io.confluent.kafkarest.entities.EmbeddedFormat;
 import io.confluent.kafkarest.entities.ProduceRecord;
 import io.confluent.kafkarest.entities.SchemaHolder;
+import io.confluent.kafkarest.entities.SpoolMode;
 import kafka.cluster.Broker;
 import kafka.utils.ZkUtils;
 import scala.collection.JavaConversions;
@@ -79,8 +79,8 @@ public class ProducerPool {
     keySerializer.configure(binaryProps, true);
     ByteArraySerializer valueSerializer = new ByteArraySerializer();
     valueSerializer.configure(binaryProps, false);
-    KafkaProducer<byte[], byte[]> byteArrayProducer
-        = new KafkaProducer<byte[], byte[]>(binaryProps, keySerializer, valueSerializer);
+    SpoolProducer<byte[], byte[]> byteArrayProducer
+        = new SpoolProducer<byte[], byte[]>(binaryProps, keySerializer, valueSerializer);
     producers.put(
         EmbeddedFormat.BINARY,
         new BinaryRestProducer(byteArrayProducer, keySerializer, valueSerializer));
@@ -101,11 +101,13 @@ public class ProducerPool {
     avroKeySerializer.configure(avroProps, true);
     final KafkaAvroSerializer avroValueSerializer = new KafkaAvroSerializer();
     avroValueSerializer.configure(avroProps, false);
-    KafkaProducer<Object, Object> avroProducer
-        = new KafkaProducer<Object, Object>(avroProps, avroKeySerializer, avroValueSerializer);
+    SpoolProducer<Object, Object> avroProducer
+        = new SpoolProducer<Object, Object>(avroProps, avroKeySerializer, avroValueSerializer);
     producers.put(
         EmbeddedFormat.AVRO,
         new AvroRestProducer(avroProducer, avroKeySerializer, avroValueSerializer));
+
+    SpoolProducer.init(originalUserProps, byteArrayProducer);
   }
 
   private static String getBootstrapBrokers(ZkClient zkClient) {
@@ -124,12 +126,13 @@ public class ProducerPool {
   public <K, V> void produce(String topic, Integer partition,
                              EmbeddedFormat recordFormat,
                              SchemaHolder schemaHolder,
+                             SpoolMode spoolMode,
                              Collection<? extends ProduceRecord<K, V>> records,
                              ProduceRequestCallback callback) {
     ProduceTask task = new ProduceTask(schemaHolder, records.size(), callback);
     log.trace("Starting produce task " + task.toString());
     RestProducer restProducer = producers.get(recordFormat);
-    restProducer.produce(task, topic, partition, records);
+    restProducer.produce(task, topic, partition, spoolMode, records);
   }
 
   public void shutdown() {

@@ -47,6 +47,7 @@ import io.confluent.kafkarest.entities.PartitionOffset;
 import io.confluent.kafkarest.entities.ProduceRecord;
 import io.confluent.kafkarest.entities.ProduceResponse;
 import io.confluent.kafkarest.entities.SchemaHolder;
+import io.confluent.kafkarest.entities.SpoolMode;
 import io.confluent.kafkarest.entities.TopicProduceRecord;
 import io.confluent.kafkarest.entities.TopicProduceRequest;
 import io.confluent.kafkarest.resources.TopicsResource;
@@ -157,7 +158,7 @@ public class TopicsResourceBinaryProduceTest
   }
 
   private <K, V> Response produceToTopic(String topic, String acceptHeader, String requestMediatype,
-                                         EmbeddedFormat recordFormat,
+                                         EmbeddedFormat recordFormat, SpoolMode spoolMode,
                                          List<? extends TopicProduceRecord<K, V>> records,
                                          final List<RecordMetadataOrException> results) {
     final TopicProduceRequest request = new TopicProduceRequest();
@@ -169,6 +170,7 @@ public class TopicsResourceBinaryProduceTest
                          EasyMock.eq((Integer) null),
                          EasyMock.eq(recordFormat),
                          EasyMock.<SchemaHolder>anyObject(),
+                         EasyMock.eq(spoolMode),
                          EasyMock.<Collection<? extends ProduceRecord<K, V>>>anyObject(),
                          EasyMock.capture(produceCallback));
     EasyMock.expectLastCall().andAnswer(new IAnswer<Object>() {
@@ -185,6 +187,7 @@ public class TopicsResourceBinaryProduceTest
     EasyMock.replay(mdObserver, producerPool);
 
     Response response = request("/topics/" + topic, acceptHeader)
+        .header("spool-mode", spoolMode)
         .post(Entity.entity(request, requestMediatype));
 
     EasyMock.verify(mdObserver, producerPool);
@@ -195,18 +198,20 @@ public class TopicsResourceBinaryProduceTest
   private void testProduceToTopicSuccess(List<BinaryTopicProduceRecord> records) {
     for (TestUtils.RequestMediaType mediatype : TestUtils.V1_ACCEPT_MEDIATYPES) {
       for (String requestMediatype : TestUtils.V1_REQUEST_ENTITY_TYPES_BINARY) {
-        Response
-            rawResponse =
-            produceToTopic("topic1", mediatype.header, requestMediatype,
-                           EmbeddedFormat.BINARY, records, produceResults);
-        assertOKResponse(rawResponse, mediatype.expected);
-        ProduceResponse response = rawResponse.readEntity(ProduceResponse.class);
+        for (SpoolMode spoolMode : TestUtils.V1_SPOOL_MODES) {
+          Response
+              rawResponse =
+              produceToTopic("topic1", mediatype.header, requestMediatype,
+                             EmbeddedFormat.BINARY, spoolMode, records, produceResults);
+          assertOKResponse(rawResponse, mediatype.expected);
+          ProduceResponse response = rawResponse.readEntity(ProduceResponse.class);
 
-        assertEquals(offsetResults, response.getOffsets());
-        assertEquals(null, response.getKeySchemaId());
-        assertEquals(null, response.getValueSchemaId());
+          assertEquals(offsetResults, response.getOffsets());
+          assertEquals(null, response.getKeySchemaId());
+          assertEquals(null, response.getValueSchemaId());
 
-        EasyMock.reset(mdObserver, producerPool);
+          EasyMock.reset(mdObserver, producerPool);
+        }
       }
     }
   }
@@ -244,7 +249,7 @@ public class TopicsResourceBinaryProduceTest
         Response
             rawResponse =
             produceToTopic("topic1", mediatype.header, requestMediatype,
-                           EmbeddedFormat.BINARY,
+                           EmbeddedFormat.BINARY, SpoolMode.DISABLED,
                            produceRecordsWithKeys, null);
         assertErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, rawResponse,
                             mediatype.expected);
@@ -285,7 +290,7 @@ public class TopicsResourceBinaryProduceTest
         Response
             rawResponse =
             produceToTopic("topic1", mediatype.header, requestMediatype,
-                           EmbeddedFormat.BINARY, produceExceptionData, produceResults);
+                           EmbeddedFormat.BINARY, SpoolMode.DISABLED, produceExceptionData, produceResults);
 
         if (produceExceptionResults == null) {
           assertErrorResponse(

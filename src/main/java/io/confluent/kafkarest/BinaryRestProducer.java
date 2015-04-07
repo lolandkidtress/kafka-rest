@@ -23,17 +23,18 @@ import org.apache.kafka.common.serialization.Serializer;
 import java.util.Collection;
 
 import io.confluent.kafkarest.entities.ProduceRecord;
+import io.confluent.kafkarest.entities.SpoolMode;
 
 /**
  * Wrapper for KafkaProducers that handles schemas.
  */
 public class BinaryRestProducer implements RestProducer<byte[], byte[]> {
 
-  protected final KafkaProducer<byte[], byte[]> producer;
+  protected final SpoolProducer<byte[], byte[]> producer;
   protected final Serializer<byte[]> keySerializer;
   protected final Serializer<byte[]> valueSerializer;
 
-  public BinaryRestProducer(KafkaProducer<byte[], byte[]> producer,
+  public BinaryRestProducer(SpoolProducer<byte[], byte[]> producer,
                             Serializer<byte[]> keySerializer,
                             Serializer<byte[]> valueSerializer) {
     this.producer = producer;
@@ -41,10 +42,11 @@ public class BinaryRestProducer implements RestProducer<byte[], byte[]> {
     this.valueSerializer = valueSerializer;
   }
 
-  public void produce(ProduceTask task, String topic, Integer partition,
+  public void produce(ProduceTask task, String topic, Integer partition, SpoolMode spoolMode,
                       Collection<? extends ProduceRecord<byte[], byte[]>> records) {
     for (ProduceRecord<byte[], byte[]> record : records) {
-      producer.send(new ProducerRecord(topic, partition, record.getKey(), record.getValue()),
+      producer.send(spoolMode,
+                    new ProducerRecord(topic, partition, record.getKey(), record.getValue()),
                     task.createCallback());
     }
   }

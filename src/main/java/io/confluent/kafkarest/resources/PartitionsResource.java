@@ -21,6 +21,7 @@ import java.util.Vector;
 import javax.validation.Valid;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
+import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
@@ -41,6 +42,7 @@ import io.confluent.kafkarest.entities.PartitionOffset;
 import io.confluent.kafkarest.entities.PartitionProduceRequest;
 import io.confluent.kafkarest.entities.ProduceRecord;
 import io.confluent.kafkarest.entities.ProduceResponse;
+import io.confluent.kafkarest.entities.SpoolMode;
 import io.confluent.rest.annotations.PerformanceMetric;
 
 @Path("/topics/{topic}/partitions")
@@ -84,8 +86,10 @@ public class PartitionsResource {
   public void produceBinary(final @Suspended AsyncResponse asyncResponse,
                             final @PathParam("topic") String topic,
                             final @PathParam("partition") int partition,
+                            final @HeaderParam("spool-mode") SpoolMode spoolMode,
                             @Valid PartitionProduceRequest<BinaryProduceRecord> request) {
-    produce(asyncResponse, topic, partition, EmbeddedFormat.BINARY, request);
+    produce(asyncResponse, topic, partition, EmbeddedFormat.BINARY,
+            spoolMode == null ? SpoolMode.DISABLED : spoolMode, request);
   }
 
   @POST
@@ -95,6 +99,7 @@ public class PartitionsResource {
   public void produceAvro(final @Suspended AsyncResponse asyncResponse,
                           final @PathParam("topic") String topic,
                           final @PathParam("partition") int partition,
+                          final @HeaderParam("spool-mode") SpoolMode spoolMode,
                           @Valid PartitionProduceRequest<AvroProduceRecord> request) {
     // Validations we can't do generically since they depend on the data format -- schemas need to
     // be available if there are any non-null entries
@@ -110,7 +115,8 @@ public class PartitionsResource {
       throw Errors.valueSchemaMissingException();
     }
 
-    produce(asyncResponse, topic, partition, EmbeddedFormat.AVRO, request);
+    produce(asyncResponse, topic, partition, EmbeddedFormat.AVRO,
+            spoolMode == null ? SpoolMode.DISABLED : spoolMode, request);
   }
 
   protected <K, V, R extends ProduceRecord<K, V>> void produce(
@@ -118,6 +124,7 @@ public class PartitionsResource {
       final String topic,
       final int partition,
       final EmbeddedFormat format,
+      final SpoolMode spoolMode,
       final PartitionProduceRequest<R> request) {
     // If the topic already exists, we can proactively check for the partition
     if (topicExists(topic)) {
@@ -129,6 +136,7 @@ public class PartitionsResource {
     ctx.getProducerPool().produce(
         topic, partition, format,
         request,
+        spoolMode,
         request.getRecords(),
         new ProducerPool.ProduceRequestCallback() {
           public void onCompletion(Integer keySchemaId, Integer valueSchemaId,

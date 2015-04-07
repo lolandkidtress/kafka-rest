@@ -7,7 +7,7 @@ SLF4J_VERSION = 1.7.7
 SLF4J = slf4j-$(SLF4J_VERSION)
 
 override_dh_auto_build:
-	mvn package
+	mvn clean package
 
 # Do not install init script automatically
 override_dh_installinit:

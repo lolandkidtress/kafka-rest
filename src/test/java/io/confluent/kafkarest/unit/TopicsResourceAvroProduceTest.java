@@ -48,6 +48,7 @@ import io.confluent.kafkarest.entities.PartitionOffset;
 import io.confluent.kafkarest.entities.ProduceRecord;
 import io.confluent.kafkarest.entities.ProduceResponse;
 import io.confluent.kafkarest.entities.SchemaHolder;
+import io.confluent.kafkarest.entities.SpoolMode;
 import io.confluent.kafkarest.entities.TopicProduceRequest;
 import io.confluent.kafkarest.resources.TopicsResource;
 import io.confluent.rest.EmbeddedServerTestHarness;
@@ -124,7 +125,7 @@ public class TopicsResourceAvroProduceTest
   }
 
   private <K, V> Response produceToTopic(String topic, String acceptHeader, String requestMediatype,
-                                         EmbeddedFormat recordFormat,
+                                         EmbeddedFormat recordFormat, SpoolMode spoolMode,
                                          TopicProduceRequest request,
                                          final List<RecordMetadataOrException> results) {
     final Capture<ProducerPool.ProduceRequestCallback>
@@ -134,6 +135,7 @@ public class TopicsResourceAvroProduceTest
                          EasyMock.eq((Integer) null),
                          EasyMock.eq(recordFormat),
                          EasyMock.<SchemaHolder>anyObject(),
+                         EasyMock.eq(spoolMode),
                          EasyMock.<Collection<? extends ProduceRecord<K, V>>>anyObject(),
                          EasyMock.capture(produceCallback));
     EasyMock.expectLastCall().andAnswer(new IAnswer<Object>() {
@@ -150,6 +152,7 @@ public class TopicsResourceAvroProduceTest
     EasyMock.replay(mdObserver, producerPool);
 
     Response response = request("/topics/" + topic, acceptHeader)
+        .header("spool-mode", spoolMode)
         .post(Entity.entity(request, requestMediatype));
 
     EasyMock.verify(mdObserver, producerPool);
@@ -161,42 +164,46 @@ public class TopicsResourceAvroProduceTest
   public void testProduceToTopicWithPartitionAndKey() {
     for (TestUtils.RequestMediaType mediatype : TestUtils.V1_ACCEPT_MEDIATYPES) {
       for (String requestMediatype : TestUtils.V1_REQUEST_ENTITY_TYPES_AVRO) {
-        final TopicProduceRequest request = new TopicProduceRequest();
-        request.setRecords(produceRecordsWithPartitionsAndKeys);
-        request.setKeySchema(keySchemaStr);
-        request.setValueSchema(valueSchemaStr);
+        for (SpoolMode spoolMode : TestUtils.V1_SPOOL_MODES) {
+          final TopicProduceRequest request = new TopicProduceRequest();
+          request.setRecords(produceRecordsWithPartitionsAndKeys);
+          request.setKeySchema(keySchemaStr);
+          request.setValueSchema(valueSchemaStr);
 
-        Response
-            rawResponse =
-            produceToTopic(topicName, mediatype.header, requestMediatype,
-                           EmbeddedFormat.AVRO,
-                           request, produceResults);
-        assertOKResponse(rawResponse, mediatype.expected);
-        ProduceResponse response = rawResponse.readEntity(ProduceResponse.class);
+          Response
+              rawResponse =
+              produceToTopic(topicName, mediatype.header, requestMediatype,
+                             EmbeddedFormat.AVRO, spoolMode,
+                             request, produceResults);
+          assertOKResponse(rawResponse, mediatype.expected);
+          ProduceResponse response = rawResponse.readEntity(ProduceResponse.class);
 
-        assertEquals(offsetResults, response.getOffsets());
-        assertEquals((Integer) 1, response.getKeySchemaId());
-        assertEquals((Integer) 2, response.getValueSchemaId());
+          assertEquals(offsetResults, response.getOffsets());
+          assertEquals((Integer) 1, response.getKeySchemaId());
+          assertEquals((Integer) 2, response.getValueSchemaId());
 
-        EasyMock.reset(mdObserver, producerPool);
+          EasyMock.reset(mdObserver, producerPool);
+        }
       }
     }
 
     // Test using schema IDs
     for (TestUtils.RequestMediaType mediatype : TestUtils.V1_ACCEPT_MEDIATYPES) {
       for (String requestMediatype : TestUtils.V1_REQUEST_ENTITY_TYPES_AVRO) {
-        final TopicProduceRequest request = new TopicProduceRequest();
-        request.setRecords(produceRecordsWithPartitionsAndKeys);
-        request.setKeySchemaId(1);
-        request.setValueSchemaId(2);
+        for (SpoolMode spoolMode : TestUtils.V1_SPOOL_MODES) {
+          final TopicProduceRequest request = new TopicProduceRequest();
+          request.setRecords(produceRecordsWithPartitionsAndKeys);
+          request.setKeySchemaId(1);
+          request.setValueSchemaId(2);
 
-        Response rawResponse =
-            produceToTopic(topicName, mediatype.header, requestMediatype,
-                           EmbeddedFormat.AVRO,
-                           request, produceResults);
-        assertOKResponse(rawResponse, mediatype.expected);
+          Response rawResponse =
+              produceToTopic(topicName, mediatype.header, requestMediatype,
+                             EmbeddedFormat.AVRO, spoolMode,
+                             request, produceResults);
+          assertOKResponse(rawResponse, mediatype.expected);
 
-        EasyMock.reset(mdObserver, producerPool);
+          EasyMock.reset(mdObserver, producerPool);
+        }
       }
     }
   }

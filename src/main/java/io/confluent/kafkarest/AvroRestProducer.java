@@ -19,7 +19,6 @@ package io.confluent.kafkarest;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import org.apache.avro.Schema;
-import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 
 import java.io.IOException;
@@ -28,19 +27,21 @@ import java.util.Collection;
 
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
+import io.confluent.kafkarest.SpoolProducer;
 import io.confluent.kafkarest.converters.AvroConverter;
 import io.confluent.kafkarest.converters.ConversionException;
 import io.confluent.kafkarest.entities.ProduceRecord;
 import io.confluent.kafkarest.entities.SchemaHolder;
+import io.confluent.kafkarest.entities.SpoolMode;
 import io.confluent.rest.exceptions.RestException;
 
 public class AvroRestProducer implements RestProducer<JsonNode, JsonNode> {
 
-  protected final KafkaProducer<Object, Object> producer;
+  protected final SpoolProducer<Object, Object> producer;
   protected final KafkaAvroSerializer keySerializer;
   protected final KafkaAvroSerializer valueSerializer;
 
-  public AvroRestProducer(KafkaProducer<Object, Object> producer,
+  public AvroRestProducer(SpoolProducer<Object, Object> producer,
                           KafkaAvroSerializer keySerializer,
                           KafkaAvroSerializer valueSerializer) {
     this.producer = producer;
@@ -48,7 +49,7 @@ public class AvroRestProducer implements RestProducer<JsonNode, JsonNode> {
     this.valueSerializer = valueSerializer;
   }
 
-  public void produce(ProduceTask task, String topic, Integer partition,
+  public void produce(ProduceTask task, String topic, Integer partition, SpoolMode spoolMode,
                       Collection<? extends ProduceRecord<JsonNode, JsonNode>> records) {
     SchemaHolder schemaHolder = task.getSchemaHolder();
     Schema keySchema = null, valueSchema = null;
@@ -99,7 +100,7 @@ public class AvroRestProducer implements RestProducer<JsonNode, JsonNode> {
       throw Errors.jsonAvroConversionException();
     }
     for (ProducerRecord<Object, Object> rec : kafkaRecords) {
-      producer.send(rec, task.createCallback());
+      producer.send(spoolMode, rec, task.createCallback());
     }
   }
 

@@ -31,6 +31,7 @@ import javax.ws.rs.core.Response;
 import io.confluent.kafkarest.entities.EntityUtils;
 import io.confluent.kafkarest.entities.PartitionOffset;
 import io.confluent.kafkarest.entities.ProduceRecord;
+import io.confluent.kafkarest.entities.SpoolMode;
 import io.confluent.rest.entities.ErrorMessage;
 import kafka.consumer.Consumer;
 import kafka.consumer.ConsumerConfig;
@@ -105,6 +106,12 @@ public class TestUtils {
   // Request content types we'll always ignore
   public static final String[] V1_INVALID_REQUEST_MEDIATYPES = {
       "text/plain"
+  };
+
+  public static final SpoolMode[] V1_SPOOL_MODES = {
+    SpoolMode.DISABLED,
+    SpoolMode.SYNC,
+    SpoolMode.ASYNC
   };
 
   /**

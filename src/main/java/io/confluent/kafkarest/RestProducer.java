@@ -17,6 +17,7 @@ package io.confluent.kafkarest; /**
 import java.util.Collection;
 
 import io.confluent.kafkarest.entities.ProduceRecord;
+import io.confluent.kafkarest.entities.SpoolMode;
 
 /**
  * Wrapper for KafkaProducer that handles schemas.
@@ -28,7 +29,7 @@ public interface RestProducer<K, V> {
    * that need to be performed before sending the messages. If schemas are looked up or registered,
    * the SchemaHolder is updated with the resulting IDs.
    */
-  public void produce(ProduceTask task, String topic, Integer partition,
+  public void produce(ProduceTask task, String topic, Integer partition, SpoolMode spoolMode,
                       Collection<? extends ProduceRecord<K, V>> records);
 
   public void close();

@@ -22,6 +22,7 @@ import java.util.Vector;
 import javax.validation.Valid;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
+import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
@@ -39,6 +40,7 @@ import io.confluent.kafkarest.entities.BinaryTopicProduceRecord;
 import io.confluent.kafkarest.entities.EmbeddedFormat;
 import io.confluent.kafkarest.entities.PartitionOffset;
 import io.confluent.kafkarest.entities.ProduceResponse;
+import io.confluent.kafkarest.entities.SpoolMode;
 import io.confluent.kafkarest.entities.Topic;
 import io.confluent.kafkarest.entities.TopicProduceRecord;
 import io.confluent.kafkarest.entities.TopicProduceRequest;
@@ -81,8 +83,10 @@ public class TopicsResource {
              Versions.KAFKA_DEFAULT_JSON, Versions.JSON, Versions.GENERIC_REQUEST})
   public void produceBinary(final @Suspended AsyncResponse asyncResponse,
                             @PathParam("topic") String topicName,
+                            @HeaderParam("spool-mode") SpoolMode spoolMode,
                             @Valid TopicProduceRequest<BinaryTopicProduceRecord> request) {
-    produce(asyncResponse, topicName, EmbeddedFormat.BINARY, request);
+    produce(asyncResponse, topicName, EmbeddedFormat.BINARY,
+            spoolMode == null ? SpoolMode.DISABLED : spoolMode, request);
   }
 
   @POST
@@ -91,6 +95,7 @@ public class TopicsResource {
   @Consumes({Versions.KAFKA_V1_JSON_AVRO})
   public void produceAvro(final @Suspended AsyncResponse asyncResponse,
                           @PathParam("topic") String topicName,
+                          @HeaderParam("spool-mode") SpoolMode spoolMode,
                           @Valid TopicProduceRequest<AvroTopicProduceRecord> request) {
     // Validations we can't do generically since they depend on the data format -- schemas need to
     // be available if there are any non-null entries
@@ -106,17 +111,20 @@ public class TopicsResource {
       throw Errors.valueSchemaMissingException();
     }
 
-    produce(asyncResponse, topicName, EmbeddedFormat.AVRO, request);
+    produce(asyncResponse, topicName, EmbeddedFormat.AVRO,
+            spoolMode == null ? SpoolMode.DISABLED : spoolMode, request);
   }
 
   public <K, V, R extends TopicProduceRecord<K, V>> void produce(
       final AsyncResponse asyncResponse,
       final String topicName,
       final EmbeddedFormat format,
+      final SpoolMode spoolMode,
       final TopicProduceRequest<R> request) {
     ctx.getProducerPool().produce(
         topicName, null, format,
         request,
+        spoolMode,
         request.getRecords(),
         new ProducerPool.ProduceRequestCallback() {
           public void onCompletion(Integer keySchemaId, Integer valueSchemaId,

@@ -57,6 +57,16 @@ the REST Proxy running using the default settings and some topics already create
           http://localhost:8082/consumers/my_avro_consumer/instances/my_instance/topics/avrotest
       [{"value":{"name":"testUser"},"partition":0,"offset":0},{"value":{"name":"testUser2"},"partition":0,"offset":1}]
 
+    # Produce a message using binary embedded data with value "Kafka" to the topic test synchronously with spool fallback
+    $ curl -X POST -H "Content-Type: application/vnd.kafka.binary.v1+json" -H "spool-mode: SYNC" \
+          --data '{"records":[{"value":"S2Fma2E="}]}' "http://localhost:8082/topics/test"
+      {"offsets":[{"partition": 3, "offset": 1}]}
+
+    # Produce a message using binary embedded data with value "Kafka" to the topic test asynchronously
+    $ curl -X POST -H "Content-Type: application/vnd.kafka.binary.v1+json" -H "spool-mode: ASYNC" \
+          --data '{"records":[{"value":"S2Fma2E="}]}' "http://localhost:8082/topics/test"
+      {"offsets":[{"partition": 3, "offset": 1}]}
+
 Installation
 ------------
 
