@@ -226,7 +226,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
       int partition;
       if (recordPartition != null) {
         partition = recordPartition.hashCode() % channelThreads.length;
-      } else if (serializedKey.length > 0) {
+      } else if (serializedKey != null) {
         partition = serializedKey.hashCode() % channelThreads.length;
       } else {
         partition = random.nextInt(channelThreads.length);
