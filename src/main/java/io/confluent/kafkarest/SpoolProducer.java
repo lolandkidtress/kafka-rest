@@ -154,8 +154,8 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
                   log.trace("Produced record: " + metadata);
                   metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "success")).mark();
                   // TODO: emit JMX gauge (System.currentTimeMillis() - serializedTimestamp) as spool_lag
-                } else {
-                  log.error("Error producing record: " + e);
+                } else if (attempt < 9) { // TODO: make this configurable globally and per topic?
+                  log.warn("Error producing record: " + e);
                   metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "failure")).mark();
                   Transaction tr = channel.getTransaction();
                   tr.begin();
@@ -177,12 +177,15 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
                   } finally {
                     tr.close();
                   }
+                } else {
+                  log.error("Dropping record: " + e);
+                  metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "dropped")).mark();
                 }
               }
             };
           } else {
             log.trace("No data");
-            Thread.sleep(1000);
+            Thread.sleep(1000); // TODO: make this configurable?
           }
           transaction.commit();
         } catch (ChannelException e) {
