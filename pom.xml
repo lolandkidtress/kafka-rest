@@ -119,6 +119,16 @@
             <artifactId>flume-file-channel</artifactId>
             <version>1.5.2</version>
         </dependency>
+        <dependency>
+          <groupId>io.dropwizard.metrics</groupId>
+          <artifactId>metrics-core</artifactId>
+          <version>3.1.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmxtrans.agent</groupId>
+            <artifactId>jmxtrans-agent</artifactId>
+            <version>1.0.8</version>
+        </dependency>
     </dependencies>
 
     <build>

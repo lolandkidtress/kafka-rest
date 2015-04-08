@@ -39,9 +39,13 @@ import java.util.Random;
 
 import io.confluent.kafkarest.entities.SpoolMode;
 
+import com.codahale.metrics.MetricRegistry;
+
 public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
 
   private static final Logger log = LoggerFactory.getLogger(SpoolProducer.class);
+
+  private static final MetricRegistry metrics = new MetricRegistry();
 
   private Serializer<K> keySerializer;
   private Serializer<V> valueSerializer;
@@ -61,6 +65,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
     String backupCheckpointPath = basePath + "/backup_checkpoint";
     String dataPath = basePath + "/data";
     int partitions = Integer.parseInt(properties.getProperty("spool.partitions", "1"));
+    log.info("Enabling " + partitions + " partitions for spooling under " + basePath);
     channelThreads = new ChannelThread[partitions];
 
     for (int partition = 0; partition < partitions; ++partition) {
@@ -77,17 +82,20 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
     }
 
     for (ChannelThread channelThread : channelThreads) {
+      log.trace("Starting thread for " + channelThread.channel.getName());
       channelThread.start();
     }
 
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override public void run() {
         for (ChannelThread channelThread : channelThreads) {
+          log.trace("Signaling thread for " + channelThread.channel.getName());
           channelThread.interrupt();
         }
         for (ChannelThread channelThread : channelThreads) {
           try {
             channelThread.join();
+            log.trace("Exited thread for " + channelThread.channel.getName());
           } catch (InterruptedException e) {
           }
         }
@@ -144,10 +152,11 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
               public void onCompletion(RecordMetadata metadata, Exception e) {
                 if (e == null) {
                   log.trace("Produced record: " + metadata);
+                  metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "success")).mark();
                   // TODO: emit JMX gauge (System.currentTimeMillis() - serializedTimestamp) as spool_lag
                 } else {
                   log.error("Error producing record: " + e);
-                  // TODO: increase JMX counter spool_failure
+                  metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "failure")).mark();
                   Transaction tr = channel.getTransaction();
                   tr.begin();
                   try {
@@ -171,6 +180,9 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
                 }
               }
             };
+          } else {
+            log.trace("No data");
+            Thread.sleep(1000);
           }
           transaction.commit();
         } catch (ChannelException e) {
@@ -183,6 +195,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
           // corrupted event. What course of action can be taken at this point? If false, then
           // FileBackedTransaction.doTake will automatically skip over and find the next available
           // event.
+        } catch (InterruptedException e) {
         } finally {
           transaction.close();
         }
@@ -246,6 +259,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
         TopicPartition tp = new TopicPartition(recordTopic, (recordPartition == null) ? -1 : recordPartition);
         RecordMetadata ack = new RecordMetadata(tp, -1, -1);
         log.trace("Spooled record: " + ack);
+        metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "spooled")).mark();
         // TODO: increase JMX counter spool_count
         callback.onCompletion(ack, null);
       } catch (Exception e) {
