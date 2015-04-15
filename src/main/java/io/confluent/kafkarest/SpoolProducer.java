@@ -33,7 +33,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Properties;
@@ -59,9 +58,9 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
   // NOTE: Setting FSYNC_PER_TXN to false allows skipping over corrupted events. See
   // https://github.com/apache/flume/blob/flume-1.5/flume-ng-channels/flume-file-channel/src/main/java/org/apache/flume/channel/file/FileChannel.java#L517
 
-  private static ChannelThread channelThreads[];
+  private static ChannelThread channelThreads[] = null;
 
-  public static void init(Properties properties, KafkaProducer<byte[], byte[]> producer) throws IOException {
+  public static void init(Properties properties, KafkaProducer<byte[], byte[]> producer) {
     String basePath = properties.getProperty("spool.path", "/tmp/kafka-rest");
     String checkpointPath = basePath + "/checkpoint";
     String backupCheckpointPath = basePath + "/backup_checkpoint";
@@ -69,46 +68,45 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
     int partitions = Integer.parseInt(properties.getProperty("spool.partitions", "1"));
     log.info("Enabling " + partitions + " partitions for spooling under " + basePath);
 
-    if (!new File(basePath).mkdirs()) {
-      log.error("Cannot create spool path " + basePath);
-      throw new IOException(basePath);
-    }
+    if (new File(basePath).mkdirs()) {
+      channelThreads = new ChannelThread[partitions];
 
-    channelThreads = new ChannelThread[partitions];
+      for (int partition = 0; partition < partitions; ++partition) {
+        Context context = new Context();
+        context.put(FileChannelConfiguration.CHECKPOINT_DIR, checkpointPath + "." + partition);
+        context.put(FileChannelConfiguration.BACKUP_CHECKPOINT_DIR, backupCheckpointPath + "." + partition);
+        context.put(FileChannelConfiguration.DATA_DIRS, dataPath + "." + partition);
+        context.put(FileChannelConfiguration.FSYNC_PER_TXN, String.valueOf(false)); // skip corrupted events
+        FileChannel channel = new FileChannel();
+        channel.setName("spool#" + partition);
+        Configurables.configure(channel, context);
+        channel.start();
+        channelThreads[partition] = new ChannelThread(channel, producer);
+      }
 
-    for (int partition = 0; partition < partitions; ++partition) {
-      Context context = new Context();
-      context.put(FileChannelConfiguration.CHECKPOINT_DIR, checkpointPath + "." + partition);
-      context.put(FileChannelConfiguration.BACKUP_CHECKPOINT_DIR, backupCheckpointPath + "." + partition);
-      context.put(FileChannelConfiguration.DATA_DIRS, dataPath + "." + partition);
-      context.put(FileChannelConfiguration.FSYNC_PER_TXN, String.valueOf(false)); // skip corrupted events
-      FileChannel channel = new FileChannel();
-      channel.setName("spool#" + partition);
-      Configurables.configure(channel, context);
-      channel.start();
-      channelThreads[partition] = new ChannelThread(channel, producer);
-    }
+      for (ChannelThread channelThread : channelThreads) {
+        log.trace("Starting thread for " + channelThread.channel.getName());
+        channelThread.start();
+      }
 
-    for (ChannelThread channelThread : channelThreads) {
-      log.trace("Starting thread for " + channelThread.channel.getName());
-      channelThread.start();
-    }
-
-    Runtime.getRuntime().addShutdownHook(new Thread() {
-      @Override public void run() {
-        for (ChannelThread channelThread : channelThreads) {
-          log.trace("Signaling thread for " + channelThread.channel.getName());
-          channelThread.interrupt();
-        }
-        for (ChannelThread channelThread : channelThreads) {
-          try {
-            channelThread.join();
-            log.trace("Exited thread for " + channelThread.channel.getName());
-          } catch (InterruptedException e) {
+      Runtime.getRuntime().addShutdownHook(new Thread() {
+        @Override public void run() {
+          for (ChannelThread channelThread : channelThreads) {
+            log.trace("Signaling thread for " + channelThread.channel.getName());
+            channelThread.interrupt();
+          }
+          for (ChannelThread channelThread : channelThreads) {
+            try {
+              channelThread.join();
+              log.trace("Exited thread for " + channelThread.channel.getName());
+            } catch (InterruptedException e) {
+            }
           }
         }
-      }
-    });
+      });
+    } else {
+      log.error("Cannot create spool path " + basePath);
+    }
   }
 
   // The background thread that produces all spooled records asynchronously.
