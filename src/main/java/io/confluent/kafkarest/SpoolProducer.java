@@ -32,6 +32,8 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Properties;
@@ -59,13 +61,19 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
 
   private static ChannelThread channelThreads[];
 
-  public static void init(Properties properties, KafkaProducer<byte[], byte[]> producer) {
+  public static void init(Properties properties, KafkaProducer<byte[], byte[]> producer) throws IOException {
     String basePath = properties.getProperty("spool.path", "/tmp/kafka-rest");
     String checkpointPath = basePath + "/checkpoint";
     String backupCheckpointPath = basePath + "/backup_checkpoint";
     String dataPath = basePath + "/data";
     int partitions = Integer.parseInt(properties.getProperty("spool.partitions", "1"));
     log.info("Enabling " + partitions + " partitions for spooling under " + basePath);
+
+    if (!new File(basePath).mkdirs()) {
+      log.error("Cannot create spool path " + basePath);
+      throw new IOException(basePath);
+    }
+
     channelThreads = new ChannelThread[partitions];
 
     for (int partition = 0; partition < partitions; ++partition) {
@@ -183,11 +191,12 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
                 }
               }
             };
+            transaction.commit();
           } else {
+            transaction.rollback();
             log.trace("No data");
             Thread.sleep(1000); // TODO: make this configurable?
           }
-          transaction.commit();
         } catch (ChannelException e) {
           log.error("Failed to read record: " + e);
           transaction.rollback();
