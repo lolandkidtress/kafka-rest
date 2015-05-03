@@ -19,9 +19,13 @@ import javax.validation.Valid;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 
+import kafka.cluster.Broker;
+
 import io.confluent.kafkarest.Context;
+import io.confluent.kafkarest.Errors;
 import io.confluent.kafkarest.Versions;
 import io.confluent.kafkarest.entities.BrokerList;
 import io.confluent.rest.annotations.PerformanceMetric;
@@ -46,5 +50,16 @@ public class BrokersResource {
   @PerformanceMetric("brokers.list")
   public BrokerList list() {
     return new BrokerList(ctx.getMetadataObserver().getBrokerIds());
+  }
+
+  @GET
+  @Path("/{broker}")
+  @PerformanceMetric("broker.get")
+  public Broker getBroker(@PathParam("broker") int brokerId) {
+    Broker broker = ctx.getMetadataObserver().getBroker(brokerId);
+    if (broker == null) {
+      throw Errors.brokerNotFoundException();
+    }
+    return broker;
   }
 }

@@ -54,13 +54,26 @@ public class MetadataObserver {
     this.zkClient = zkClient;
   }
 
+  public Seq<Broker> getBrokers() {
+    return ZkUtils.getAllBrokersInCluster(zkClient);
+  }
+
   public List<Integer> getBrokerIds() {
-    Seq<Broker> brokers = ZkUtils.getAllBrokersInCluster(zkClient);
+    Seq<Broker> brokers = getBrokers();
     List<Integer> brokerIds = new Vector<Integer>(brokers.size());
     for (Broker broker : JavaConversions.asJavaCollection(brokers)) {
       brokerIds.add(broker.id());
     }
     return brokerIds;
+  }
+
+  public Broker getBroker(Integer brokerId) {
+    for (Broker broker : JavaConversions.asJavaCollection(getBrokers())) {
+      if (broker.id() == brokerId) {
+        return broker;
+      }
+    }
+    return null;
   }
 
   public Collection<String> getTopicNames() {
