@@ -20,8 +20,10 @@ import org.eclipse.jetty.server.Server;
 import org.junit.After;
 import org.junit.Before;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,6 +84,9 @@ public abstract class ClusterTestHarness {
   protected SchemaRegistryRestApplication schemaRegApp = null;
   protected Server schemaRegServer = null;
 
+  // Spool config
+  protected String spoolDirs = null;
+
   protected String bootstrapServers = null;
   protected Properties restProperties = null;
   protected KafkaRestConfig restConfig = null;
@@ -105,6 +110,10 @@ public abstract class ClusterTestHarness {
     }
     zkPort = ports.remove();
     zkConnect = String.format("localhost:%d", zkPort);
+    try {
+      spoolDirs = Files.createTempDirectory("kafka-rest-").toString();
+    } catch (IOException e) {
+    }
 
     configs = new Vector<Properties>();
     bootstrapServers = "";
@@ -142,6 +151,7 @@ public abstract class ClusterTestHarness {
     restProperties.put(KafkaRestConfig.PORT_CONFIG, ((Integer) restPort).toString());
     restProperties.put(KafkaRestConfig.ZOOKEEPER_CONNECT_CONFIG, zkConnect);
     restProperties.put(KafkaRestConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegConnect);
+    restProperties.put(KafkaRestConfig.SPOOL_DIRS_CONFIG, spoolDirs);
     restConnect = String.format("http://localhost:%d", restPort);
   }
 

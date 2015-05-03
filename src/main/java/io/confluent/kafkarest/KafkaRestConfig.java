@@ -68,6 +68,26 @@ public class KafkaRestConfig extends RestConfig {
       "Number of threads to run produce requests on.";
   public static final String PRODUCER_THREADS_DEFAULT = "5";
 
+  public static final String SPOOL_DIRS_CONFIG = "spool.dirs";
+  private static final String SPOOL_DIRS_DOC =
+      "The list of directories to use for spooling.";
+  private static final String SPOOL_DIRS_DEFAULT = "/tmp/kafka-rest";
+
+  public static final String SPOOL_RETRY_ATTEMPTS_CONFIG = "spool.retry.attempts";
+  private static final String SPOOL_RETRY_ATTEMPTS_DOC =
+      "The number of retry attempts for each record.";
+  private static final String SPOOL_RETRY_ATTEMPTS_DEFAULT = "3";
+
+  public static final String SPOOL_RETRY_BACKOFF_MS_CONFIG = "spool.retry.backoff.ms";
+  private static final String SPOOL_RETRY_BACKOFF_MS_DOC =
+      "The number of milliseconds to back off between retry attempts.";
+  private static final String SPOOL_RETRY_BACKOFF_MS_DEFAULT = "1";
+
+  public static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_CONFIG = "spool.retry.backpressure.threshold";
+  private static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DOC =
+      "The number of consecutive failures before backpressuring the retry attempts.";
+  private static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DEFAULT = "-1";
+
   public static final String CONSUMER_ITERATOR_TIMEOUT_MS_CONFIG = "consumer.iterator.timeout.ms";
   private static final String
       CONSUMER_ITERATOR_TIMEOUT_MS_DOC =
@@ -141,6 +161,14 @@ public class KafkaRestConfig extends RestConfig {
                 Importance.HIGH, SCHEMA_REGISTRY_URL_DOC)
         .define(PRODUCER_THREADS_CONFIG, Type.INT, PRODUCER_THREADS_DEFAULT,
                 Importance.LOW, PRODUCER_THREADS_DOC)
+        .define(SPOOL_DIRS_CONFIG, Type.STRING, SPOOL_DIRS_DEFAULT,
+                Importance.HIGH, SPOOL_DIRS_DOC)
+        .define(SPOOL_RETRY_ATTEMPTS_CONFIG, Type.INT, SPOOL_RETRY_ATTEMPTS_DEFAULT,
+                Importance.MEDIUM, SPOOL_RETRY_ATTEMPTS_DOC)
+        .define(SPOOL_RETRY_BACKOFF_MS_CONFIG, Type.INT, SPOOL_RETRY_BACKOFF_MS_DEFAULT,
+                Importance.LOW, SPOOL_RETRY_BACKOFF_MS_DOC)
+        .define(SPOOL_RETRY_BACKPRESSURE_THRESHOLD_CONFIG, Type.INT, SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DEFAULT,
+                Importance.LOW, SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DOC)
         .define(CONSUMER_ITERATOR_TIMEOUT_MS_CONFIG, Type.INT, CONSUMER_ITERATOR_TIMEOUT_MS_DEFAULT,
                 Importance.LOW, CONSUMER_ITERATOR_TIMEOUT_MS_DOC)
         .define(CONSUMER_ITERATOR_BACKOFF_MS_CONFIG, Type.INT, CONSUMER_ITERATOR_BACKOFF_MS_DEFAULT,

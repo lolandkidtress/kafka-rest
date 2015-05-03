@@ -20,6 +20,7 @@ import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
@@ -157,10 +158,11 @@ public class ProducerTest extends AbstractProducerTest {
   // This should really be a unit test, but producer settings aren't accessible and any requests
   // trigger metadata requests, so to verify we need to use a full cluster setup
   @Test
-  public void testProducerConfigOverrides() {
+  public void testProducerConfigOverrides() throws java.io.IOException {
     Properties overrides = new Properties();
     overrides.setProperty("block.on.buffer.full", "false");
     overrides.setProperty("buffer.memory", "1");
+    overrides.setProperty("spool.dirs", Files.createTempDirectory("kafka-rest-").toString());
     // Note separate ProducerPool since the override should only be for this test, so
     // getProducerPool doesn't work here
     ProducerPool pool = new ProducerPool(this.restConfig, this.bootstrapServers, overrides);

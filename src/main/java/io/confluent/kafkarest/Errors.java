@@ -29,6 +29,13 @@ import kafka.common.InvalidConfigException;
 
 public class Errors {
 
+  public final static String BROKER_NOT_FOUND_MESSAGE = "Broker not found.";
+  public final static int BROKER_NOT_FOUND_ERROR_CODE = 40400;
+
+  public static RestException brokerNotFoundException() {
+    return new RestNotFoundException(BROKER_NOT_FOUND_MESSAGE, BROKER_NOT_FOUND_ERROR_CODE);
+  }
+
   public final static String TOPIC_NOT_FOUND_MESSAGE = "Topic not found.";
   public final static int TOPIC_NOT_FOUND_ERROR_CODE = 40401;
 

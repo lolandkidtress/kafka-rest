@@ -107,7 +107,16 @@ public class ProducerPool {
         EmbeddedFormat.AVRO,
         new AvroRestProducer(avroProducer, avroKeySerializer, avroValueSerializer));
 
-    SpoolProducer.init(originalUserProps, byteArrayProducer);
+    Properties spoolProps = new Properties();
+    for (String propName : originalUserProps.stringPropertyNames()) {
+      spoolProps.setProperty(propName, originalUserProps.getProperty(propName));
+    }
+    if (producerConfigOverrides != null) {
+      for (String propName : producerConfigOverrides.stringPropertyNames()) {
+        spoolProps.setProperty(propName, producerConfigOverrides.getProperty(propName));
+      }
+    }
+    SpoolProducer.init(spoolProps, byteArrayProducer);
   }
 
   private static String getBootstrapBrokers(ZkClient zkClient) {
@@ -136,6 +145,7 @@ public class ProducerPool {
   }
 
   public void shutdown() {
+    SpoolProducer.shutdown();
     for (RestProducer restProducer : producers.values()) {
       restProducer.close();
     }
