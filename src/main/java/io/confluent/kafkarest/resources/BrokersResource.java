@@ -22,11 +22,10 @@ import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 
-import kafka.cluster.Broker;
-
 import io.confluent.kafkarest.Context;
 import io.confluent.kafkarest.Errors;
 import io.confluent.kafkarest.Versions;
+import io.confluent.kafkarest.entities.Broker;
 import io.confluent.kafkarest.entities.BrokerList;
 import io.confluent.rest.annotations.PerformanceMetric;
 

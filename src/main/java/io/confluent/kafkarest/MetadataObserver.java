@@ -67,10 +67,10 @@ public class MetadataObserver {
     return brokerIds;
   }
 
-  public Broker getBroker(Integer brokerId) {
+  public io.confluent.kafkarest.entities.Broker getBroker(Integer brokerId) {
     for (Broker broker : JavaConversions.asJavaCollection(getBrokers())) {
       if (broker.id() == brokerId) {
-        return broker;
+        return new io.confluent.kafkarest.entities.Broker(broker.id(), broker.host(), broker.port());
       }
     }
     return null;
