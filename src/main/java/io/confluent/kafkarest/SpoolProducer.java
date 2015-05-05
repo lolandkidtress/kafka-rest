@@ -257,14 +257,15 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
       while (!done) {
         Transaction queueTransaction = queueChannel.getTransaction();
         Transaction sourceTransaction = sourceChannel.getTransaction();
+        queueTransaction.begin();
+        sourceTransaction.begin();
         try {
-          for (int i = 0; i < batchSize; ++i) {
+          for (int i = 0; i < batchSize && !done; ++i) {
             SpoolRecord record = SpoolRecord.take(sourceChannel);
-            if (record.timestamp / retryBackoff <= tsBucket) {
+            if (record != null && record.timestamp / retryBackoff <= tsBucket) {
               record.put(queueChannel);
             } else {
               done = true;
-              break;
             }
           }
           queueTransaction.commit();
@@ -396,7 +397,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
           // queue channel.
           tsBucket = ts / retryBackoff;
           // Revive records from the retry channel older than this time bucket.
-          reviveRecords(queueChannel, tsBucket);
+          reviveRecords(retryChannel, tsBucket);
         }
       }
 
