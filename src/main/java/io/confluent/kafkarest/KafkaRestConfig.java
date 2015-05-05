@@ -73,6 +73,16 @@ public class KafkaRestConfig extends RestConfig {
       "The list of directories to use for spooling.";
   private static final String SPOOL_DIRS_DEFAULT = "/tmp/kafka-rest";
 
+  public static final String SPOOL_BATCH_SIZE_CONFIG = "spool.batch.size";
+  private static final String SPOOL_BATCH_SIZE_DOC =
+      "The number of records in a batch.";
+  private static final String SPOOL_BATCH_SIZE_DEFAULT = "100";
+
+  public static final String SPOOL_BATCH_MS_CONFIG = "spool.batch.ms";
+  private static final String SPOOL_BATCH_MS_DOC =
+      "The number of milliseconds before cutting short the batch.";
+  private static final String SPOOL_BATCH_MS_DEFAULT = "500";
+
   public static final String SPOOL_RETRY_ATTEMPTS_CONFIG = "spool.retry.attempts";
   private static final String SPOOL_RETRY_ATTEMPTS_DOC =
       "The number of retry attempts for each record.";
@@ -163,6 +173,10 @@ public class KafkaRestConfig extends RestConfig {
                 Importance.LOW, PRODUCER_THREADS_DOC)
         .define(SPOOL_DIRS_CONFIG, Type.STRING, SPOOL_DIRS_DEFAULT,
                 Importance.HIGH, SPOOL_DIRS_DOC)
+        .define(SPOOL_BATCH_SIZE_CONFIG, Type.INT, SPOOL_BATCH_SIZE_DEFAULT,
+                Importance.MEDIUM, SPOOL_BATCH_SIZE_DOC)
+        .define(SPOOL_BATCH_MS_CONFIG, Type.INT, SPOOL_BATCH_MS_DEFAULT,
+                Importance.MEDIUM, SPOOL_BATCH_MS_DOC)
         .define(SPOOL_RETRY_ATTEMPTS_CONFIG, Type.INT, SPOOL_RETRY_ATTEMPTS_DEFAULT,
                 Importance.MEDIUM, SPOOL_RETRY_ATTEMPTS_DOC)
         .define(SPOOL_RETRY_BACKOFF_MS_CONFIG, Type.INT, SPOOL_RETRY_BACKOFF_MS_DEFAULT,
