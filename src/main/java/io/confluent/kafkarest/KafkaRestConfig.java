@@ -91,7 +91,7 @@ public class KafkaRestConfig extends RestConfig {
   public static final String SPOOL_RETRY_BACKOFF_MS_CONFIG = "spool.retry.backoff.ms";
   private static final String SPOOL_RETRY_BACKOFF_MS_DOC =
       "The number of milliseconds to back off between retry attempts.";
-  private static final String SPOOL_RETRY_BACKOFF_MS_DEFAULT = "1";
+  private static final String SPOOL_RETRY_BACKOFF_MS_DEFAULT = "250";
 
   public static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_CONFIG = "spool.retry.backpressure.threshold";
   private static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DOC =

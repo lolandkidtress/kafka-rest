@@ -15,14 +15,8 @@
  **/
 package io.confluent.kafkarest;
 
-import org.apache.flume.ChannelException;
-import org.apache.flume.Context;
-import org.apache.flume.Event;
 import org.apache.flume.Transaction;
 import org.apache.flume.channel.file.FileChannel;
-import org.apache.flume.channel.file.FileChannelConfiguration;
-import org.apache.flume.conf.Configurables;
-import org.apache.flume.event.EventBuilder;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -33,13 +27,9 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.confluent.kafkarest.entities.SpoolMode;
@@ -56,7 +46,7 @@ import com.codahale.metrics.MetricRegistry;
 // returns an error. In the asynchronous mode, records are spooled to local disk
 // and immediately returns.
 
-public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
+class SpoolProducer<K, V> extends KafkaProducer<K, V> {
 
   // Each record is composed of the following FileChannel event fields:
   //   attempt: 4 byte integer
@@ -92,7 +82,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
   // Reference to a collection of threads used for asynchronously producing the
   // spooled messages. Each thread operates with its own set of queue, retry and
   // error files for better parallelism.
-  private static ArrayList<ChannelThread> channelThreads;
+  private static ArrayList<SpoolThread> spoolThreads;
 
   public static void init(Properties properties, KafkaProducer<byte[], byte[]> producer) {
     try {
@@ -114,13 +104,13 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
       log.info("Retry up to " + (retryAttempts < 0 ? "unlimited" : retryAttempts) +
                " attempts with " + retryBackoff + "ms backoff interval");
 
-      channelThreads = new ArrayList<ChannelThread>();
+      spoolThreads = new ArrayList<SpoolThread>();
       for (String spoolDir : spoolDirs.split(",")) {
         log.trace("Initializing thread for " + spoolDir.trim());
-        ChannelThread thread = new ChannelThread(spoolDir.trim(), producer,
-          batchSize, batchTime, retryAttempts, retryBackoff);
+        SpoolThread thread = new SpoolThread(spoolDir.trim(), producer,
+          consecutiveFailures, batchSize, batchTime, retryAttempts, retryBackoff);
         thread.start();
-        channelThreads.add(thread);
+        spoolThreads.add(thread);
       }
     } catch (RestConfigException e) {
       log.error("Failed to initialize spool producer " + e);
@@ -128,289 +118,15 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
   }
 
   public static void shutdown() {
-    for (ChannelThread channelThread : channelThreads) {
-      log.trace("Signaling thread for " + channelThread.queueChannel.getName());
-      channelThread.interrupt();
+    for (SpoolThread spoolThread : spoolThreads) {
+      log.trace("Signaling thread for " + spoolThread.queueChannel.getName());
+      spoolThread.interrupt();
     }
-    channelThreads = null;
+    spoolThreads = null;
   }
 
-  // The thread that produces all spooled records asynchronously.
-  static class ChannelThread extends Thread {
-
-    // Records are appended to the queue channel from the outward facing threads
-    // and processed by this channel thread.
-    public final FileChannel queueChannel;
-
-    // Records are appended to the retry channel and later dequeued and enqueued
-    // back into the queue channel by this this channel thread. Records are
-    // repeatedly tried until either successfully produced to the kafka cluster
-    // or if it gets preserved in the error channel.
-    private final FileChannel retryChannel;
-
-    // Records are appended to the error channel by this channel thread and no
-    // longer touched. Records can be revived by an external admin thread and
-    // re-appended to the queue channel.
-    public final FileChannel errorChannel;
-
-    private final KafkaProducer<byte[], byte[]> producer;
-    private final int batchSize;
-    private final int batchTime;
-    private final int retryAttempts;
-    private final int retryBackoff;
-
-    private FileChannel initChannel(File channelPath) {
-      channelPath.mkdirs();
-      Context context = new Context();
-      context.put(FileChannelConfiguration.CHECKPOINT_DIR,
-                  new File(channelPath, "checkpoint").getAbsolutePath());
-      context.put(FileChannelConfiguration.BACKUP_CHECKPOINT_DIR,
-                  new File(channelPath, "checkpoint.backup").getAbsolutePath());
-      context.put(FileChannelConfiguration.DATA_DIRS,
-                  new File(channelPath, "data").getAbsolutePath());
-      context.put(FileChannelConfiguration.FSYNC_PER_TXN,
-                  String.valueOf(false)); // configure to skip corrupted events
-      FileChannel channel = new FileChannel();
-      channel.setName(channelPath.getAbsolutePath());
-      Configurables.configure(channel, context);
-      channel.start();
-      return channel;
-    }
-
-    public ChannelThread(String basePath, KafkaProducer<byte[], byte[]> producer,
-                         int batchSize, int batchTime, int retryAttempts, int retryBackoff) {
-      super(basePath);
-      this.queueChannel = initChannel(new File(basePath, "queue"));
-      this.retryChannel = initChannel(new File(basePath, "retry"));
-      this.errorChannel = initChannel(new File(basePath, "error"));
-      this.producer = producer;
-      this.batchSize = batchSize;
-      this.batchTime = batchTime;
-      this.retryAttempts = retryAttempts;
-      this.retryBackoff = retryBackoff;
-    }
-
-    // This is a helper method to construct the callback object for the spool
-    // producer.
-    private Callback getCallback(final CountDownLatch latch, final SpoolRecord record) {
-      return new Callback() {
-        private void preserve(FileChannel channel) throws Exception {
-          Transaction transaction = channel.getTransaction();
-          transaction.begin();
-          try {
-            // TODO: put record into channel
-            record.put(channel);
-            transaction.commit();
-          } catch (Exception e) {
-            log.warn("Cannot preserve record: " + e);
-            transaction.rollback();
-            throw e;
-          } finally {
-            transaction.close();
-          }
-        }
-        public void onCompletion(RecordMetadata metadata, Exception ex) {
-          if (ex == null) {
-            log.trace("Produced record: " + metadata);
-            metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "success")).mark();
-            consecutiveFailures.set(0);
-            latch.countDown();
-          } else {
-            log.trace("Failed to produce record: " + metadata);
-            metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "failure")).mark();
-            consecutiveFailures.incrementAndGet();
-            try {
-              if (ex instanceof RetriableException || record.attempt < retryAttempts) {
-                log.warn("Cannot produce record: " + ex);
-                try {
-                  preserve(retryChannel);
-                } catch (Exception e) {
-                  log.error("Cannot spool to retry channel: " + e);
-                  // NOTE: It is not good to reach this point, but lets preserve
-                  // the record to the error channel so the channel thread can
-                  // continue to process other records.
-                  preserve(errorChannel);
-                }
-              } else {
-                log.error("Cannot produce record: " + ex);
-                // NOTE: Some non-retriable condition occured, lets preserve the
-                // record to the error channel so the thread can continue to
-                // process other records.
-                preserve(errorChannel);
-              }
-
-              log.trace("Preserved record: " + metadata);
-              latch.countDown();
-            } catch (Exception e) {
-              // Swallow exception. Because the latch is not decremented, this
-              // channel thread will block on the irrecoverable error. The queue
-              // transaction will not commit and therefore cause data loss.
-              log.error("Cannot preserve record: " + e);
-            }
-          }
-        }
-      };
-    }
-
-    public void reviveRecords(FileChannel sourceChannel, long tsBucket) {
-      boolean done = false;
-      while (!done) {
-        Transaction queueTransaction = queueChannel.getTransaction();
-        Transaction sourceTransaction = sourceChannel.getTransaction();
-        queueTransaction.begin();
-        sourceTransaction.begin();
-        try {
-          for (int i = 0; i < batchSize && !done; ++i) {
-            SpoolRecord record = SpoolRecord.take(sourceChannel);
-            if (record != null && record.timestamp / retryBackoff <= tsBucket) {
-              record.put(queueChannel);
-            } else {
-              done = true;
-            }
-          }
-          queueTransaction.commit();
-          sourceTransaction.commit();
-        } catch (Exception e) {
-          sourceTransaction.rollback();
-          queueTransaction.rollback();
-        } finally {
-          sourceTransaction.close();
-          queueTransaction.close();
-        }
-      }
-    }
-
-    public void run() {
-      log.trace("Started thread for " + queueChannel.getName());
-
-      // Process records from queue channel until this thread is signaled to
-      // terminate.
-      boolean terminate = false;
-      long tsBucket = 0;
-      while (!terminate && !Thread.interrupted()) {
-        // Get the timestamp of this batch.
-        long ts = System.currentTimeMillis();
-        // Set up the expected number of records in this batch.
-        CountDownLatch latch = new CountDownLatch(batchSize);
-
-        Transaction queueTransaction = queueChannel.getTransaction();
-        queueTransaction.begin();
-        try {
-          // NOTE: The following achieves a batching behavior while periodically
-          // updating the progress across the queue and error channels. If at
-          // any point in the following for-loop an exception were to occur, the
-          // entire batch will rollback in the queue channel and retried by the
-          // subsequent iteration.
-          for (int i = 0; i < batchSize; ++i) {
-            // The following takes a record from the queue channel and tries to
-            // produce to the kafka cluster. The queue transaction is kept open
-            // for the entire batch until the latch is fully drained by each of
-            // the corresponding callbacks.
-            SpoolRecord record = SpoolRecord.take(queueChannel);
-            if (record != null) {
-              // NOTE: Any unexpected failures from this point on will cause the
-              // inflight records to potentially be produced "at least once".
-              // However, it will guarantee no data loss.
-              // Send the record via the async producer to the kafka cluster.
-              producer.send(record.payload, getCallback(latch, record));
-
-              // If this batch takes too long to fill, cut it short and continue
-              // processing in the next batch. This is for preventing the queue
-              // transaction from being kept open too long due to inactivity.
-              if (System.currentTimeMillis() - ts >= batchTime) {
-                // The following will also indirectly terminate the for-loop.
-                while (++i < batchSize) {
-                  latch.countDown();
-                }
-              }
-            } else {
-              // No more records currently in the queue channel. Sleep for a
-              // little while and continue as new batch.
-              long ms = batchTime - (System.currentTimeMillis() - ts);
-              if (ms > 0) {
-                try {
-                  // The amount of time to sleep is arbitrary. We can make this
-                  // a configurable property, but a not well picked value can
-                  // cause significant delays. We might as well simply sleep
-                  // until the max batch time while capped at 1 second.
-                  Thread.sleep(Math.min(1000, ms));
-                } catch (InterruptedException e) {
-                  // Delay the interruption and attempt to perform a clean
-                  // thread termination.
-                  terminate = true;
-                }
-              }
-
-              // Lets start a new batch so we can avoid the queue transaction
-              // being opened too long. The following will also indirecty
-              // terminate the for-loop.
-              while (i++ < batchSize) {
-                latch.countDown();
-              }
-            }
-          }
-
-          // The batch of records are underway. Wait for the async producer to
-          // acknowledge all inflight records have either been successfully
-          // produced to the kafka cluster, or inserted into the retry channel
-          // upon failures.
-          try {
-            if (terminate) {
-              // The channel thread has already been signaled to terminate. Lets
-              // spend as much time as possible to drain the records or until
-              // the main process terminates this thread.
-              latch.await();
-            } else if (!latch.await(Math.max(1000L, batchTime * 100), TimeUnit.MILLISECONDS)) {
-              // The amount of time to block before deciding to terminate the
-              // thread due to some very bad condition is arbitrary. Picking 100
-              // times the max batch time sounds reasonably high, yet won't be
-              // forever.
-              throw new Exception("Stuck waiting for producers");
-            }
-          } catch (InterruptedException e) {
-            // Delay the interruption and attempt to continue the clean thread
-            // termination logic.
-            terminate = true;
-          }
-
-          // NOTE: All records in this batch either have successfully reached
-          // the kafka cluster or have been persisted into the retry channel.
-          // Commit the queue transaction to acknowledge these messages have
-          // been completed. If an unexpected failure occurs before the commit,
-          // the records in this batch will be processed again by the subsequent
-          // iteration. Duplicate records may end up in the kafka cluster, but
-          // no data loss will occur.
-          queueTransaction.commit();
-        } catch (Exception e) {
-          // Something has gone terribly wrong. Rollback and fail fast by
-          // bubbling up the error to prevent processing any further records.
-          log.error("Unexpected error: " + e);
-          queueTransaction.rollback();
-          terminate = true;
-        } finally {
-          queueTransaction.close();
-        }
-
-        if (!terminate && ts / retryBackoff > tsBucket) {
-          // We entered the next timestamp bucket based on the retry interval
-          // and need to move some records from the retry channel back to the
-          // queue channel.
-          tsBucket = ts / retryBackoff;
-          // Revive records from the retry channel older than this time bucket.
-          reviveRecords(retryChannel, tsBucket);
-        }
-      }
-
-      // The channel thread is about to terminate. Clean up the channels.
-      queueChannel.stop();
-      retryChannel.stop();
-      errorChannel.stop();
-
-      log.trace("Stopped thread for " + queueChannel.getName());
-    }
-  }
-
-  SpoolProducer(Map<String, Object> props, Serializer<K> keySerializer, Serializer<V> valueSerializer) {
+  public SpoolProducer(Map<String, Object> props,
+                       Serializer<K> keySerializer, Serializer<V> valueSerializer) {
     super(props, keySerializer, valueSerializer);
 
     this.keySerializer = keySerializer;
@@ -430,14 +146,14 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
         // Pick a partition to spool to
         int part;
         if (partition != null) {
-          part = partition.hashCode() % channelThreads.size();
+          part = partition.hashCode() % spoolThreads.size();
         } else if (key != null) {
-          part = key.hashCode() % channelThreads.size();
+          part = key.hashCode() % spoolThreads.size();
         } else {
-          part = (int)(timestamp % channelThreads.size());
+          part = (int)(timestamp % spoolThreads.size());
         }
 
-        FileChannel channel = channelThreads.get(part).queueChannel;
+        FileChannel channel = spoolThreads.get(part).queueChannel;
         Transaction transaction = channel.getTransaction();
         transaction.begin();
         try {
@@ -488,96 +204,5 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
     } else {
       send(record, callback);
     }
-  }
-}
-
-// Helper class for dealing with the take and put operations in the specified
-// channel.
-class SpoolRecord {
-
-  public final Integer attempt;
-  public final Long timestamp;
-  public final ProducerRecord<byte[], byte[]> payload;
-
-  private final Event attemptEvent;
-  private final Event timestampEvent;
-  private final Event topicEvent;
-  private final Event partitionEvent;
-  private final Event keyEvent;
-  private final Event valueEvent;
-
-  // Helper method to take a record out of the specified channel.
-  public static SpoolRecord take(FileChannel channel) {
-    try {
-      Event attemptEvent = channel.take();
-      Event timestampEvent = channel.take();
-      Event topicEvent = channel.take();
-      Event partitionEvent = channel.take();
-      Event keyEvent = channel.take();
-      Event valueEvent = channel.take();
-      if (attemptEvent != null &&
-          timestampEvent != null &&
-          topicEvent != null &&
-          partitionEvent != null &&
-          keyEvent != null &&
-          valueEvent != null) {
-        return new SpoolRecord(attemptEvent, timestampEvent, topicEvent,
-                               partitionEvent, keyEvent, valueEvent);
-      }
-    } catch (ChannelException e) {
-      // NOTE: What can be done at this point to mitigate the corrupted event?
-      // In the case FileChannelConfiguration.FSYNC_PER_TXN is true, then
-      // ChannelException will fire upon any corrupted event. What course of
-      // action can be taken at this point? We force this to be false, hence
-      // FileBackedTransaction.doTake will automatically skip over and find the
-      // next available event without throwing this exception. Keeping this
-      // catch-statement so compiler will not complain.
-    }
-    return null;
-  }
-
-  // Helper to construct a new spool record while bumping the attempt count.
-  private SpoolRecord(Event attemptEvent, Event timestampEvent, Event topicEvent,
-                      Event partitionEvent, Event keyEvent, Event valueEvent) {
-    this.attempt = ByteBuffer.wrap(attemptEvent.getBody()).getInt();
-    this.timestamp = ByteBuffer.wrap(timestampEvent.getBody()).getLong();
-    byte[] partition = partitionEvent.getBody();
-    this.payload = new ProducerRecord<byte[], byte[]>(new String(topicEvent.getBody()),
-      (partition.length) == 0 ? null : ByteBuffer.wrap(partition).getInt(),
-      keyEvent.getBody(), valueEvent.getBody());
-    this.attemptEvent = EventBuilder.withBody(ByteBuffer.allocate(4).putInt(attempt + 1).array());
-    this.timestampEvent = timestampEvent;
-    this.topicEvent = topicEvent;
-    this.partitionEvent = partitionEvent;
-    this.keyEvent = keyEvent;
-    this.valueEvent = valueEvent;
-  }
-
-  // Construct a new spool record.
-  public SpoolRecord(long timestamp, String topic, Integer partition, byte[] key, byte[] value) {
-    this.attempt = 0;
-    this.timestamp = timestamp;
-    this.payload = new ProducerRecord<byte[], byte[]>(topic, partition, key, value);
-    byte[] serializedAttempt = ByteBuffer.allocate(4).putInt(0).array();
-    byte[] serializedTimestamp = ByteBuffer.allocate(8).putLong(timestamp).array();
-    byte[] serializedTopic = topic.getBytes();
-    byte[] serializedPartition = (partition == null) ? new byte[0] :
-      ByteBuffer.allocate(4).putInt(partition.intValue()).array();
-    this.attemptEvent = EventBuilder.withBody(serializedAttempt);
-    this.timestampEvent = EventBuilder.withBody(serializedTimestamp);
-    this.topicEvent = EventBuilder.withBody(serializedTopic);
-    this.partitionEvent = EventBuilder.withBody(serializedPartition);
-    this.keyEvent = EventBuilder.withBody(key);
-    this.valueEvent = EventBuilder.withBody(value);
-  }
-
-  // Helper method to put a record into the specified channel.
-  public void put(FileChannel channel) {
-    channel.put(attemptEvent);
-    channel.put(timestampEvent);
-    channel.put(topicEvent);
-    channel.put(partitionEvent);
-    channel.put(keyEvent);
-    channel.put(valueEvent);
   }
 }

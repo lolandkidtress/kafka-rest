@@ -118,6 +118,12 @@
             <groupId>org.apache.flume.flume-ng-channels</groupId>
             <artifactId>flume-file-channel</artifactId>
             <version>1.5.2</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.mortbay.jetty</groupId>
+                    <artifactId>servlet-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
           <groupId>io.dropwizard.metrics</groupId>
