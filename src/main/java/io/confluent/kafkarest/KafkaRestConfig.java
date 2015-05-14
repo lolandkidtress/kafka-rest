@@ -96,7 +96,7 @@ public class KafkaRestConfig extends RestConfig {
   public static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_CONFIG = "spool.retry.backpressure.threshold";
   private static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DOC =
       "The number of consecutive failures before backpressuring the retry attempts.";
-  private static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DEFAULT = "-1";
+  private static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DEFAULT = "2147483647";
 
   public static final String CONSUMER_ITERATOR_TIMEOUT_MS_CONFIG = "consumer.iterator.timeout.ms";
   private static final String

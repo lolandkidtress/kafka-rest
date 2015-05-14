@@ -68,8 +68,12 @@ class SpoolThread extends Thread {
   private FileChannel initChannel(File channelPath) {
     channelPath.mkdirs();
     Context context = new Context();
+    context.put(FileChannelConfiguration.MAX_FILE_SIZE,
+                String.valueOf(268435456));
     context.put(FileChannelConfiguration.CHECKPOINT_DIR,
                 new File(channelPath, "checkpoint").getAbsolutePath());
+    context.put(FileChannelConfiguration.USE_DUAL_CHECKPOINTS,
+                String.valueOf(true));
     context.put(FileChannelConfiguration.BACKUP_CHECKPOINT_DIR,
                 new File(channelPath, "checkpoint.backup").getAbsolutePath());
     context.put(FileChannelConfiguration.DATA_DIRS,
