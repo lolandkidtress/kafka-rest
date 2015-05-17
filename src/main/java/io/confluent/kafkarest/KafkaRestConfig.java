@@ -93,10 +93,20 @@ public class KafkaRestConfig extends RestConfig {
       "The number of milliseconds to back off between retry attempts.";
   private static final String SPOOL_RETRY_BACKOFF_MS_DEFAULT = "250";
 
+  public static final String SPOOL_RETRY_BATCH_SIZE_CONFIG = "spool.retry.batch.size";
+  private static final String SPOOL_RETRY_BATCH_SIZE_DOC =
+      "The number of records to retry for each backoff interval.";
+  private static final String SPOOL_RETRY_BATCH_SIZE_DEFAULT = "2147483647";
+
   public static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_CONFIG = "spool.retry.backpressure.threshold";
   private static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DOC =
       "The number of consecutive failures before backpressuring the retry attempts.";
   private static final String SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DEFAULT = "2147483647";
+
+  public static final String SPOOL_ALWAYS_CONFIG = "spool.always";
+  private static final String SPOOL_ALWAYS_DOC =
+      "Whether to always spool regardless what the spool mode specifies.";
+  private static final String SPOOL_ALWAYS_DEFAULT = "false";
 
   public static final String CONSUMER_ITERATOR_TIMEOUT_MS_CONFIG = "consumer.iterator.timeout.ms";
   private static final String
@@ -181,8 +191,12 @@ public class KafkaRestConfig extends RestConfig {
                 Importance.MEDIUM, SPOOL_RETRY_ATTEMPTS_DOC)
         .define(SPOOL_RETRY_BACKOFF_MS_CONFIG, Type.INT, SPOOL_RETRY_BACKOFF_MS_DEFAULT,
                 Importance.LOW, SPOOL_RETRY_BACKOFF_MS_DOC)
+        .define(SPOOL_RETRY_BATCH_SIZE_CONFIG, Type.INT, SPOOL_RETRY_BATCH_SIZE_DEFAULT,
+                Importance.LOW, SPOOL_RETRY_BATCH_SIZE_DOC)
         .define(SPOOL_RETRY_BACKPRESSURE_THRESHOLD_CONFIG, Type.INT, SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DEFAULT,
                 Importance.LOW, SPOOL_RETRY_BACKPRESSURE_THRESHOLD_DOC)
+        .define(SPOOL_ALWAYS_CONFIG, Type.BOOLEAN, SPOOL_ALWAYS_DEFAULT,
+                Importance.LOW, SPOOL_ALWAYS_DOC)
         .define(CONSUMER_ITERATOR_TIMEOUT_MS_CONFIG, Type.INT, CONSUMER_ITERATOR_TIMEOUT_MS_DEFAULT,
                 Importance.LOW, CONSUMER_ITERATOR_TIMEOUT_MS_DOC)
         .define(CONSUMER_ITERATOR_BACKOFF_MS_CONFIG, Type.INT, CONSUMER_ITERATOR_BACKOFF_MS_DEFAULT,

@@ -26,6 +26,7 @@ import io.confluent.kafkarest.resources.BrokersResource;
 import io.confluent.kafkarest.resources.ConsumersResource;
 import io.confluent.kafkarest.resources.PartitionsResource;
 import io.confluent.kafkarest.resources.RootResource;
+import io.confluent.kafkarest.resources.SpoolResource;
 import io.confluent.kafkarest.resources.TopicsResource;
 import io.confluent.rest.Application;
 import io.confluent.rest.RestConfigException;
@@ -87,6 +88,7 @@ public class KafkaRestApplication extends Application<KafkaRestConfig> {
     config.register(new TopicsResource(context));
     config.register(new PartitionsResource(context));
     config.register(new ConsumersResource(context));
+    config.register(new SpoolResource(context));
   }
 
   @Override

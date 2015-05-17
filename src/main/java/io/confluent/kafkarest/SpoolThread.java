@@ -28,11 +28,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.confluent.kafkarest.entities.SpoolChannel;
+import io.confluent.kafkarest.entities.SpoolMessage;
+import io.confluent.kafkarest.entities.SpoolShard;
 
 import com.codahale.metrics.MetricRegistry;
 
@@ -45,7 +50,7 @@ class SpoolThread extends Thread {
 
   // Records are appended to the queue channel from the outward facing threads
   // and processed by this spool thread.
-  public final FileChannel queueChannel;
+  private final FileChannel queueChannel;
 
   // Records are appended to the retry channel and later dequeued and enqueued
   // back into the queue channel by this spool thread. Records are repeatedly
@@ -56,7 +61,7 @@ class SpoolThread extends Thread {
   // Records are appended to the error channel by this spool thread and no
   // longer touched. Records can be revived by an external admin thread and
   // re-appended to the queue channel.
-  public final FileChannel errorChannel;
+  private final FileChannel errorChannel;
 
   private final KafkaProducer<byte[], byte[]> producer;
   private final AtomicInteger consecutiveFailures;
@@ -64,6 +69,17 @@ class SpoolThread extends Thread {
   private final int batchTime;
   private final int retryAttempts;
   private final int retryBackoff;
+  private final int retryBatch;
+
+  // Admin thread can update this value to alter the error batch size to control
+  // how many records to revive from the error channel. Each time this value is
+  // set to a positive value, the spool thread will revive the specified amount
+  // of records and then reset it back to zero.
+  private final AtomicInteger errorBatch = new AtomicInteger(0);
+
+  // Admin thread can update this to prevent the spool thread from producing
+  // records until the specified timestamp.
+  private final AtomicLong queueResume = new AtomicLong(0);
 
   private FileChannel initChannel(File channelPath) {
     channelPath.mkdirs();
@@ -89,7 +105,8 @@ class SpoolThread extends Thread {
 
   public SpoolThread(String basePath, KafkaProducer<byte[], byte[]> producer,
                      AtomicInteger consecutiveFailures,
-                     int batchSize, int batchTime, int retryAttempts, int retryBackoff) {
+                     int batchSize, int batchTime,
+                     int retryAttempts, int retryBackoff, int retryBatch) {
     super(basePath);
     this.queueChannel = initChannel(new File(basePath, SpoolChannel.queue.toString()));
     this.retryChannel = initChannel(new File(basePath, SpoolChannel.retry.toString()));
@@ -100,13 +117,65 @@ class SpoolThread extends Thread {
     this.batchTime = batchTime;
     this.retryAttempts = retryAttempts;
     this.retryBackoff = retryBackoff;
+    this.retryBatch = retryBatch;
+  }
+
+  public SpoolShard getInfo() {
+    return new SpoolShard(getName(), queueResume.get());
+  }
+
+  public void spoolRecord(SpoolRecord record) throws Exception {
+    Transaction transaction = queueChannel.getTransaction();
+    transaction.begin();
+    try {
+      record.put(queueChannel);
+      transaction.commit();
+    } catch (Exception e) {
+      transaction.rollback();
+      throw e;
+    } finally {
+      transaction.close();
+    }
+  }
+
+  public void suspendQueuedRecords(long timestamp) {
+    // Signal for the thread to not process any records in the queue channel
+    // until the specified timestamp.
+    queueResume.set(timestamp);
+  }
+
+  public ArrayList<SpoolMessage> peekErroredRecords(int count) throws Exception {
+    ArrayList<SpoolMessage> records = new ArrayList<SpoolMessage>();
+    Transaction transaction = errorChannel.getTransaction();
+    transaction.begin();
+    try {
+      for (int i = 0; i < count; ++i) {
+        SpoolRecord record = SpoolRecord.take(errorChannel);
+        if (record != null) {
+          records.add(new SpoolMessage(record.attempt, record.timestamp, record.payload.topic(),
+                                       record.payload.key(), record.payload.value()));
+        } else {
+          break;
+        }
+      }
+    } finally {
+      transaction.rollback();
+      transaction.close();
+    }
+    return records;
+  }
+
+  public void reviveErroredRecords(int count) {
+    // Signal for the next retry interval to also revive some records from the
+    // error channel.
+    errorBatch.set(count);
   }
 
   // This is a helper method to construct the callback object for the spool
   // producer.
   private Callback getCallback(final CountDownLatch latch, final SpoolRecord record) {
     return new Callback() {
-      private void preserve(FileChannel channel) throws Exception {
+      private void preserveRecord(FileChannel channel) throws Exception {
         Transaction transaction = channel.getTransaction();
         transaction.begin();
         try {
@@ -135,20 +204,20 @@ class SpoolThread extends Thread {
             if (ex instanceof RetriableException && record.attempt % retryAttempts != 0) {
               log.warn("Cannot produce record: " + ex);
               try {
-                preserve(retryChannel);
+                preserveRecord(retryChannel);
               } catch (Exception e) {
                 log.error("Cannot spool to retry channel: " + e);
                 // NOTE: It is not good to reach this point, but lets preserve
                 // the record to the error channel so the spool thread can
                 // continue to process other records.
-                preserve(errorChannel);
+                preserveRecord(errorChannel);
               }
             } else {
               log.error("Cannot produce record: " + ex);
               // NOTE: Some non-retriable condition occured, lets preserve the
               // record to the error channel so the thread can continue to
               // process other records.
-              preserve(errorChannel);
+              preserveRecord(errorChannel);
             }
 
             log.trace("Preserved record: " + metadata);
@@ -164,8 +233,8 @@ class SpoolThread extends Thread {
     };
   }
 
-  public void reviveRecords(FileChannel sourceChannel, long tsBucket) {
-    boolean done = false;
+  private void enqueueRecords(FileChannel sourceChannel, int count, long tsBucket) {
+    boolean done = count > 0;
     while (!done) {
       Transaction queueTransaction = queueChannel.getTransaction();
       Transaction sourceTransaction = sourceChannel.getTransaction();
@@ -176,6 +245,7 @@ class SpoolThread extends Thread {
           SpoolRecord record = SpoolRecord.take(sourceChannel);
           if (record != null && record.timestamp / retryBackoff <= tsBucket) {
             record.put(queueChannel);
+            done = --count > 0;
           } else {
             done = true;
           }
@@ -202,6 +272,16 @@ class SpoolThread extends Thread {
     while (!terminate && !Thread.interrupted()) {
       // Get the timestamp of this batch.
       long ts = System.currentTimeMillis();
+      // Check if the thread is suppose to resume draining the queue channel.
+      if (ts < queueResume.get()) {
+        try {
+          Thread.sleep(1000);
+        } catch (InterruptedException e) {
+          terminate = true;
+        }
+        continue;
+      }
+
       // Set up the expected number of records in this batch.
       CountDownLatch latch = new CountDownLatch(batchSize);
 
@@ -304,11 +384,15 @@ class SpoolThread extends Thread {
 
       if (!terminate && ts / retryBackoff > tsBucket) {
         // We entered the next timestamp bucket based on the retry interval and
-        // need to move some records from the retry channel back to the queue
-        // channel.
+        // need to move some records from the retry channel and possibly the
+        // error channel back to the queue channel.
         tsBucket = ts / retryBackoff;
-        // Revive records from the retry channel older than this time bucket.
-        reviveRecords(retryChannel, tsBucket);
+        // Enqueue records from the retry channel older than this time bucket up
+        // to the specified number of records.
+        enqueueRecords(retryChannel, retryBatch, tsBucket);
+        // Enqueue records from the error channel up to the specified number of
+        // records.
+        enqueueRecords(errorChannel, errorBatch.getAndSet(0), Long.MAX_VALUE);
       }
     }
 
