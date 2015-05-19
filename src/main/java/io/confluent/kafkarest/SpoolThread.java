@@ -115,7 +115,7 @@ class SpoolThread extends Thread {
     this.consecutiveFailures = consecutiveFailures;
     this.batchSize = batchSize;
     this.batchTime = batchTime;
-    this.retryAttempts = retryAttempts;
+    this.retryAttempts = Math.max(retryAttempts, 0);
     this.retryBackoff = retryBackoff;
     this.retryBatch = retryBatch;
   }
@@ -201,7 +201,8 @@ class SpoolThread extends Thread {
           metrics.meter(MetricRegistry.name(SpoolThread.class, "producer", "failure")).mark();
           consecutiveFailures.incrementAndGet();
           try {
-            if (ex instanceof RetriableException && record.attempt % retryAttempts != 0) {
+            if (ex instanceof RetriableException &&
+                (record.attempt % (retryAttempts + 1)) != 0) {
               log.warn("Cannot produce record: " + ex);
               try {
                 preserveRecord(retryChannel);

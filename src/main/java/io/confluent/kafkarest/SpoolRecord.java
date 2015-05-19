@@ -71,13 +71,13 @@ class SpoolRecord {
   // Helper to construct a new spool record while bumping the attempt count.
   private SpoolRecord(Event attemptEvent, Event timestampEvent, Event topicEvent,
                       Event partitionEvent, Event keyEvent, Event valueEvent) {
-    this.attempt = ByteBuffer.wrap(attemptEvent.getBody()).getInt();
+    this.attempt = ByteBuffer.wrap(attemptEvent.getBody()).getInt() + 1;
     this.timestamp = ByteBuffer.wrap(timestampEvent.getBody()).getLong();
     byte[] partition = partitionEvent.getBody();
     this.payload = new ProducerRecord<byte[], byte[]>(new String(topicEvent.getBody()),
       (partition.length) == 0 ? null : ByteBuffer.wrap(partition).getInt(),
       keyEvent.getBody(), valueEvent.getBody());
-    this.attemptEvent = EventBuilder.withBody(ByteBuffer.allocate(4).putInt(attempt + 1).array());
+    this.attemptEvent = EventBuilder.withBody(ByteBuffer.allocate(4).putInt(attempt).array());
     this.timestampEvent = timestampEvent;
     this.topicEvent = topicEvent;
     this.partitionEvent = partitionEvent;
@@ -87,10 +87,10 @@ class SpoolRecord {
 
   // Construct a new spool record.
   public SpoolRecord(long timestamp, String topic, Integer partition, byte[] key, byte[] value) {
-    this.attempt = 0;
+    this.attempt = 1;
     this.timestamp = timestamp;
     this.payload = new ProducerRecord<byte[], byte[]>(topic, partition, key, value);
-    byte[] serializedAttempt = ByteBuffer.allocate(4).putInt(0).array();
+    byte[] serializedAttempt = ByteBuffer.allocate(4).putInt(attempt).array();
     byte[] serializedTimestamp = ByteBuffer.allocate(8).putLong(timestamp).array();
     byte[] serializedTopic = topic.getBytes();
     byte[] serializedPartition = (partition == null) ? new byte[0] :
