@@ -15,13 +15,37 @@
  **/
 package io.confluent.kafkarest.entities;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class SpoolMessage {
+  private int attempt;
+  private long timestamp;
+  private String topic;
+  private byte[] key;
+  private byte[] value;
+
+  @JsonCreator
   public SpoolMessage(@JsonProperty("attempt") int attempt,
                       @JsonProperty("timestamp") long timestamp,
                       @JsonProperty("topic") String topic,
                       @JsonProperty("key") byte[] key,
                       @JsonProperty("value") byte[] value) {
+    this.attempt = attempt;
+    this.timestamp = timestamp;
+    this.topic = topic;
+    this.key = key;
+    this.value = value;
+  }
+
+  @Override
+  public String toString() {
+    return "SpoolMessage{" +
+           "attempt=" + attempt +
+           ", timestamp=" + timestamp +
+           ", topic=" + topic +
+           ", key=" + EntityUtils.encodeBase64Binary(key) +
+           ", value=" + EntityUtils.encodeBase64Binary(value) + '\'' +
+           '}';
   }
 }

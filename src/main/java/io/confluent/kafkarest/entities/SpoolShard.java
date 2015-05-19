@@ -15,10 +15,25 @@
  **/
 package io.confluent.kafkarest.entities;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class SpoolShard {
-  public SpoolShard(@JsonProperty("name") String name,
-                    @JsonProperty("resume") long resume) {
+  private String path;
+  private long timestamp;
+
+  @JsonCreator
+  public SpoolShard(@JsonProperty("spool_path") String path,
+                    @JsonProperty("resume_timestamp") long timestamp) {
+    this.path = path;
+    this.timestamp = timestamp;
+  }
+
+  @Override
+  public String toString() {
+    return "SpoolShard{" +
+           "spool_path=" + path +
+           ", resume_timestamp=" + timestamp + '\'' +
+           '}';
   }
 }
