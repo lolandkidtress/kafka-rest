@@ -84,8 +84,6 @@ class SpoolThread extends Thread {
   private FileChannel initChannel(File channelPath) {
     channelPath.mkdirs();
     Context context = new Context();
-    context.put(FileChannelConfiguration.MAX_FILE_SIZE,
-                String.valueOf(268435456));
     context.put(FileChannelConfiguration.CHECKPOINT_DIR,
                 new File(channelPath, "checkpoint").getAbsolutePath());
     context.put(FileChannelConfiguration.USE_DUAL_CHECKPOINTS,
@@ -96,6 +94,11 @@ class SpoolThread extends Thread {
                 new File(channelPath, "data").getAbsolutePath());
     context.put(FileChannelConfiguration.FSYNC_PER_TXN,
                 String.valueOf(false)); // configure to skip corrupted events
+    context.put(FileChannelConfiguration.MAX_FILE_SIZE, 268435456);
+    // The following gives a much larger grace period to allow the disk to write its data.
+    // http://flume.apache.org/releases/content/1.5.0/apidocs/constant-values.html#org.apache.flume.channel.file.FileChannelConfiguration.DEFAULT_KEEP_ALIVE
+    // https://github.com/apache/flume/blob/trunk/flume-ng-channels/flume-file-channel/src/main/java/org/apache/flume/channel/file/FileChannel.java#L465
+    context.put(FileChannelConfiguration.KEEP_ALIVE, 30);
     FileChannel channel = new FileChannel();
     channel.setName(channelPath.getAbsolutePath());
     Configurables.configure(channel, context);
