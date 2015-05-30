@@ -39,14 +39,15 @@ import io.confluent.kafkarest.entities.SpoolChannel;
 import io.confluent.kafkarest.entities.SpoolMessage;
 import io.confluent.kafkarest.entities.SpoolShard;
 
-import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Meter;
 
 // The thread that produces all spooled records asynchronously.
 class SpoolThread extends Thread {
 
   private static final Logger log = LoggerFactory.getLogger(SpoolThread.class);
 
-  private static final MetricRegistry metrics = new MetricRegistry();
+  private final Meter producerSuccessMeter;
+  private final Meter producerFailureMeter;
 
   // Records are appended to the queue channel from the outward facing threads
   // and processed by this spool thread.
@@ -81,9 +82,11 @@ class SpoolThread extends Thread {
   // records until the specified timestamp.
   private final AtomicLong queueResume = new AtomicLong(0);
 
-  private FileChannel initChannel(File channelPath) {
+  private static FileChannel initChannel(File channelPath, int batchSize) {
     channelPath.mkdirs();
     Context context = new Context();
+    context.put(FileChannelConfiguration.MAX_FILE_SIZE,
+                String.valueOf(268435456));
     context.put(FileChannelConfiguration.CHECKPOINT_DIR,
                 new File(channelPath, "checkpoint").getAbsolutePath());
     context.put(FileChannelConfiguration.USE_DUAL_CHECKPOINTS,
@@ -94,11 +97,13 @@ class SpoolThread extends Thread {
                 new File(channelPath, "data").getAbsolutePath());
     context.put(FileChannelConfiguration.FSYNC_PER_TXN,
                 String.valueOf(false)); // configure to skip corrupted events
-    context.put(FileChannelConfiguration.MAX_FILE_SIZE, 268435456);
     // The following gives a much larger grace period to allow the disk to write its data.
     // http://flume.apache.org/releases/content/1.5.0/apidocs/constant-values.html#org.apache.flume.channel.file.FileChannelConfiguration.DEFAULT_KEEP_ALIVE
     // https://github.com/apache/flume/blob/trunk/flume-ng-channels/flume-file-channel/src/main/java/org/apache/flume/channel/file/FileChannel.java#L465
-    context.put(FileChannelConfiguration.KEEP_ALIVE, 30);
+    context.put(FileChannelConfiguration.KEEP_ALIVE,
+                String.valueOf(30));
+    context.put(FileChannelConfiguration.TRANSACTION_CAPACITY,
+                String.valueOf(batchSize));
     FileChannel channel = new FileChannel();
     channel.setName(channelPath.getAbsolutePath());
     Configurables.configure(channel, context);
@@ -107,14 +112,16 @@ class SpoolThread extends Thread {
   }
 
   public SpoolThread(String basePath, KafkaProducer<byte[], byte[]> producer,
-                     AtomicInteger consecutiveFailures,
-                     int batchSize, int batchTime,
+                     Meter producerSuccessMeter, Meter producerFailureMeter,
+                     AtomicInteger consecutiveFailures, int batchSize, int batchTime,
                      int retryAttempts, int retryBackoff, int retryBatch) {
     super(basePath);
-    this.queueChannel = initChannel(new File(basePath, SpoolChannel.queue.toString()));
-    this.retryChannel = initChannel(new File(basePath, SpoolChannel.retry.toString()));
-    this.errorChannel = initChannel(new File(basePath, SpoolChannel.error.toString()));
+    this.queueChannel = initChannel(new File(basePath, SpoolChannel.queue.toString()), batchSize);
+    this.retryChannel = initChannel(new File(basePath, SpoolChannel.retry.toString()), batchSize);
+    this.errorChannel = initChannel(new File(basePath, SpoolChannel.error.toString()), batchSize);
     this.producer = producer;
+    this.producerSuccessMeter = producerSuccessMeter;
+    this.producerFailureMeter = producerFailureMeter;
     this.consecutiveFailures = consecutiveFailures;
     this.batchSize = batchSize;
     this.batchTime = batchTime;
@@ -182,11 +189,10 @@ class SpoolThread extends Thread {
         Transaction transaction = channel.getTransaction();
         transaction.begin();
         try {
-          // TODO: put record into channel
           record.put(channel);
           transaction.commit();
         } catch (Exception e) {
-          log.warn("Cannot preserve record: " + e);
+          log.warn("Cannot preserve record: ", e);
           transaction.rollback();
           throw e;
         } finally {
@@ -195,42 +201,43 @@ class SpoolThread extends Thread {
       }
       public void onCompletion(RecordMetadata metadata, Exception ex) {
         if (ex == null) {
-          log.trace("Produced record: " + metadata);
-          metrics.meter(MetricRegistry.name(SpoolThread.class, "producer", "success")).mark();
+          log.trace("Produced record: ", metadata);
+          producerSuccessMeter.mark();
           consecutiveFailures.set(0);
           latch.countDown();
         } else {
-          log.trace("Failed to produce record: " + metadata);
-          metrics.meter(MetricRegistry.name(SpoolThread.class, "producer", "failure")).mark();
+          log.trace("Failed to produce record: ", metadata);
+          producerFailureMeter.mark();
           consecutiveFailures.incrementAndGet();
           try {
             if (ex instanceof RetriableException &&
                 (record.attempt % (retryAttempts + 1)) != 0) {
-              log.warn("Cannot produce record: " + ex);
+              log.warn("Cannot produce record: ", ex);
               try {
                 preserveRecord(retryChannel);
               } catch (Exception e) {
-                log.error("Cannot spool to retry channel: " + e);
+                log.error("Cannot spool to retry channel: ", e);
                 // NOTE: It is not good to reach this point, but lets preserve
                 // the record to the error channel so the spool thread can
                 // continue to process other records.
                 preserveRecord(errorChannel);
               }
             } else {
-              log.error("Cannot produce record: " + ex);
+              log.error("Cannot produce record: ", ex);
+              log.trace("Cannot produce record: ", record);
               // NOTE: Some non-retriable condition occured, lets preserve the
               // record to the error channel so the thread can continue to
               // process other records.
               preserveRecord(errorChannel);
             }
 
-            log.trace("Preserved record: " + metadata);
+            log.trace("Preserved record: ", metadata);
             latch.countDown();
           } catch (Exception e) {
             // Swallow exception. Because the latch is not decremented, this
             // spool thread will block on the irrecoverable error. The queue
             // transaction will not commit and therefore cause data loss.
-            log.error("Cannot preserve record: " + e);
+            log.error("Cannot preserve record: ", e);
           }
         }
       }
@@ -379,7 +386,7 @@ class SpoolThread extends Thread {
       } catch (Exception e) {
         // Something has gone terribly wrong. Rollback and fail fast by bubbling
         // up the error to prevent processing any further records.
-        log.error("Unexpected error: " + e);
+        log.error("Unexpected error: ", e);
         queueTransaction.rollback();
         terminate = true;
       } finally {

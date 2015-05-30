@@ -116,6 +116,7 @@ public class ProducerPool {
         spoolProps.setProperty(propName, producerConfigOverrides.getProperty(propName));
       }
     }
+
     SpoolProducer.init(spoolProps, byteArrayProducer);
   }
 

@@ -37,6 +37,7 @@ import io.confluent.kafkarest.entities.SpoolShard;
 import io.confluent.kafkarest.exceptions.SpoolException;
 import io.confluent.rest.RestConfigException;
 
+import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 
 // The goal of SpoolProducer is to provide a durable way to produce to the kafka
@@ -66,6 +67,13 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
 
   private static final MetricRegistry metrics = new MetricRegistry();
 
+  private static final Meter producerSpooledMeter =
+    metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "spooled"));
+  private static final Meter producerSuccessMeter =
+    metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "success"));
+  private static final Meter producerFailureMeter =
+    metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "failure"));
+
   private Serializer<K> keySerializer;
   private Serializer<V> valueSerializer;
 
@@ -76,6 +84,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
   // to zero. When the value exceeds the configured threshold, it will signal
   // send() to return an error immediately, regardless if the caller specified
   // to spool to disk.
+  // TODO: Expose consecutive failures via gauge
   private static AtomicInteger consecutiveFailures = new AtomicInteger(0);
 
   private static int retryBackpressureThreshold;
@@ -116,13 +125,16 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
       spoolThreads = new ArrayList<SpoolThread>();
       for (String spoolDir : spoolDirs.split(",")) {
         log.trace("Initializing thread for " + spoolDir.trim());
-        SpoolThread thread = new SpoolThread(spoolDir.trim(), producer, consecutiveFailures,
-          batchSize, batchTime, retryAttempts, retryBackoff, retryBatch);
+        SpoolThread thread = new SpoolThread(spoolDir.trim(), producer,
+          producerSuccessMeter, producerFailureMeter,
+          consecutiveFailures, batchSize, batchTime, retryAttempts, retryBackoff, retryBatch);
         thread.start();
         spoolThreads.add(thread);
       }
     } catch (RestConfigException e) {
-      log.error("Failed to initialize spool producer " + e);
+      log.error("Failed to initialize spool producer ", e);
+      spoolThreads = null;
+      throw Errors.kafkaErrorException(e);
     }
   }
 
@@ -155,7 +167,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
         // Pick a shard to spool to.
         int shard;
         if (partition != null) {
-          shard = partition.hashCode() % spoolThreads.size();
+	    shard = (topic.hashCode() ^ partition.hashCode()) % spoolThreads.size();
         } else if (key != null) {
           shard = key.hashCode() % spoolThreads.size();
         } else {
@@ -167,12 +179,11 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
 
         TopicPartition tp = new TopicPartition(topic, (partition == null) ? -1 : partition);
         RecordMetadata ack = new RecordMetadata(tp, -1, -1);
-        log.trace("Spooled record: " + ack);
-        metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "spooled")).mark();
-        // TODO: increase JMX counter spool_count
+        log.trace("Spooled record: ", ack);
+        producerSpooledMeter.mark();
         callback.onCompletion(ack, null);
       } catch (Exception e) {
-        log.error("Failed to spool record: " + e);
+        log.error("Failed to spool record: ", e);
         callback.onCompletion(null, e);
       }
     } else {
@@ -192,7 +203,7 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
         public void onCompletion(RecordMetadata metadata, Exception e) {
           // Treat other conditions such as brokers unavailable also as retriable
           if (e instanceof RetriableException) {
-            log.warn("Unable to produce record: " + e);
+            log.warn("Unable to produce record: ", e);
             spool(record, timestamp, callback);
           } else {
             callback.onCompletion(metadata, e);

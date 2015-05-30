@@ -70,7 +70,7 @@ public class KafkaRestConfig extends RestConfig {
 
   public static final String SPOOL_DIRS_CONFIG = "spool.dirs";
   private static final String SPOOL_DIRS_DOC =
-      "The list of directories to use for spooling.";
+      "The list of directories (comma separated) to use for spooling.";
   private static final String SPOOL_DIRS_DEFAULT = "/tmp/kafka-rest";
 
   public static final String SPOOL_BATCH_SIZE_CONFIG = "spool.batch.size";

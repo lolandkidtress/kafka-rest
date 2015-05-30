@@ -54,21 +54,21 @@ public class MetadataObserver {
     this.zkClient = zkClient;
   }
 
-  public Seq<Broker> getBrokers() {
-    return ZkUtils.getAllBrokersInCluster(zkClient);
+  public Collection<Broker> getBrokers() {
+    return JavaConversions.asJavaCollection(ZkUtils.getAllBrokersInCluster(zkClient));
   }
 
   public List<Integer> getBrokerIds() {
-    Seq<Broker> brokers = getBrokers();
+    Collection<Broker> brokers = getBrokers();
     List<Integer> brokerIds = new Vector<Integer>(brokers.size());
-    for (Broker broker : JavaConversions.asJavaCollection(brokers)) {
+    for (Broker broker : brokers) {
       brokerIds.add(broker.id());
     }
     return brokerIds;
   }
 
   public io.confluent.kafkarest.entities.Broker getBroker(Integer brokerId) {
-    for (Broker broker : JavaConversions.asJavaCollection(getBrokers())) {
+    for (Broker broker : getBrokers()) {
       if (broker.id() == brokerId) {
         return new io.confluent.kafkarest.entities.Broker(broker.id(), broker.host(), broker.port());
       }
