@@ -37,6 +37,7 @@ import io.confluent.kafkarest.entities.SpoolShard;
 import io.confluent.kafkarest.exceptions.SpoolException;
 import io.confluent.rest.RestConfigException;
 
+import com.codahale.metrics.JmxReporter;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 
@@ -66,6 +67,8 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
   private static final Logger log = LoggerFactory.getLogger(SpoolProducer.class);
 
   private static final MetricRegistry metrics = new MetricRegistry();
+
+  private static final JmxReporter reporter = JmxReporter.forRegistry(metrics).build();
 
   private static final Meter producerSpooledMeter =
     metrics.meter(MetricRegistry.name(SpoolProducer.class, "producer", "spooled"));
@@ -131,6 +134,8 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
         thread.start();
         spoolThreads.add(thread);
       }
+
+      reporter.start();
     } catch (RestConfigException e) {
       log.error("Failed to initialize spool producer ", e);
       spoolThreads = null;
@@ -144,6 +149,8 @@ public class SpoolProducer<K, V> extends KafkaProducer<K, V> {
       spoolThread.interrupt();
     }
     spoolThreads = null;
+
+    reporter.close();
   }
 
   public SpoolProducer(Map<String, Object> props,
